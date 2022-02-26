@@ -1,0 +1,477 @@
+# Spelling corrections for atom labels and abbreviations
+# that might not be correctly parsed by OCR engine
+# You can run osra with -d option to check the spelling correction
+# process - the output looks like:
+# OCR string --> Corrected String --> Final Output
+# Note that by default OSRA might try as many as 3 different resolutions
+# so you may have quite a bit of output to look through. Try a specific
+# resolution (with -r switch) or choose the best match.
+# Empty lines are ignored and lines starting with # are comments
+
+Ci  Cl
+Cf  Cl
+Cll Cl
+
+HN  N
+NH  N
+M   N 
+Hm  N
+MN  N
+N2  N
+NM  N
+NH2 N
+H2N N
+NHZ N
+HZN N
+NH3 N
+nu  N 
+Hu  N  
+lU  N  
+HlU N 
+lUH N 
+H2Y N
+RN  N
+MH  N
+M2M N
+M   N
+HnN N
+nIH N
+NHX N
+mH  N
+NN  N
+hN  N
+Nh  N
+
+OH  O  
+oH  O  
+Ho  O  
+HO  O  
+ol  O
+On  O  
+on  O  
+no  O  
+nO  O  
+ON  O
+oN  O
+O4  O
+OM  O
+Un  O
+4O  O
+Mo  O
+nU  O
+UnH O
+nUH O
+
+Meo MeO 
+oMe MeO  
+oMg MeO  
+omg MeO  
+Mgo MeO 
+leo MeO  
+ohle MeO  
+lleo MeO  
+olllle MeO  
+OMe MeO  
+OM8 MeO  
+OMo MeO  
+OMB MeO  
+OCH3 MeO  
+OCHS MeO  
+H3CO MeO  
+OM4 MeO
+ocH MeO
+OM6 MeO
+M6O MeO
+OMR MeO
+OMoo MeO
+OmB MeO
+MoO MeO
+M*O MeO
+McoO MeO
+Ome MeO
+MgO MeO
+M8O MeO
+MBO MeO
+
+NC CN 
+YC CN
+Nc CN
+cN CN
+
+nBU nBu
+neU nBu 
+ngU nBu
+n8U nBu
+BU nBu
+
+Eto EtO
+oEt EtO
+Elo EtO
+oEl EtO
+ElO EtO
+OEl EtO
+OC2H EtO
+OCH2CH3 EtO
+CH3CH2O EtO
+
+olgU OiBu
+oleU OiBu
+OlBU OiBu
+
+npr iPr
+llpll iPr
+lpl iPr
+npl iPr
+lPl iPr
+nPl iPr
+
+tBU tBu
+llBU tBu
+lBU tBu
+
+CooH COOH
+HooC COOH
+Co2H COOH
+CO2H COOH
+HOOC COOH
+CO2n COOH
+co2H COOH
+CO2  COOH
+
+
+AC Ac
+pC Ac
+pc Ac
+
+ACo AcO
+opC AcO
+pcO AcO
+ACO AcO
+oCO AcO
+OoC AcO
+OpC AcO
+pCO AcO
+RCO AcO
+ORC AcO
+OnC AcO
+OAc AcO
+nCO AcO
+Rco AcO
+oRc AcO
+OAC AcO
+
+Bl Br
+el Br
+BC Br
+BF Br
+
+# Need to distinguish between a recognized label for methyl and
+# the default empty string for carbon
+CH3 Me
+H3C Me
+CH Me
+CH2 Me
+HC Me
+hle Me
+M8 Me
+MB Me
+MR Me
+Me Me
+H2C Me
+3C Me
+
+pl Ar
+nl Ar
+
+oX Ox
+
+NoZ NO2
+o2N NO2
+No2 NO2
+No NO2
+O2N NO2
+NOZ NO2
+MO2 NO2
+
+F3C CF3
+CF CF3
+FC CF3
+Co CF3
+F8l CF3
+CFS CF3
+FSC CF3
+
+F3Co F3CN
+
+S3 S 
+Se S 
+lS S 
+8 S 
+SH S 
+HS S 
+5 S
+
+O2S SO2
+
+lH H
+1H H
+
+AcNH NHAc
+AcHN NHAc
+ACNH NHAc
+NHnC NHAc
+pCNH NHAc
+NHpC NHAc
+lCnuH NHAc
+NHAC NHAc
+
+OlHP THPO
+lHPO THPO
+lNpo THPO
+olHp THPO
+
+
+NlOHCH3 NOHCH3
+
+HO3S SO3H
+so3H SO3H
+Ho3s SO3H
+SO3  SO3H
+SUn3 SO3H
+
+NMe MeN
+NHMe MeN
+NHMF MeN
+NHlME MeN
+
+RO OR
+oR OR
+Ro OR
+
+lHPO THPO
+OlHP THPO
+
+NCOlRlH3 N(OH)CH3
+
+pZO BzO
+p2O BzO
+OBX BzO
+BZO BzO
+B2O BzO
+OB2 BzO
+OBz BzO
+OBZ BzO
+Blo BzO
+BZC BzO
+EBZO BzO
+CBZ BzO
+B2C BzO
+
+Sl Si
+
+CO2El CO2Et
+COOEl CO2Et
+COOEt CO2Et
+COOC2H CO2Et
+CO2CH2CH3 CO2Et
+COOCH2CH3 CO2Et
+CO2C2H5 CO2Et
+COEl CO2Et
+COHEl CO2Et
+COOMe CO2Me
+COOCH3 CO2Me
+CO2CH3 CO2Me
+HUn2C COOH
+CO2E  CO2Et
+EO   EtO
+HO2C COOH
+CUn2H COOH
+CnU2H COOH
+MeHN MeN
+n2N N
+El Et
+CH2CH3 Et
+CH3CH2 Et
+C2H5 Et
+H5C2 Et
+OBn BnO
+HNZ ZNH
+ZHN ZNH
+HNAm AmNH
+OAm AmO
+AmOOC AmO2C
+CO2Am AmO2C
+COOAm AmO2C
+SAm AmS
+HNBn BnNH
+BnN BnNH
+CO2Bn BnO2C
+BnOOC BnO2C
+COOBn BnO2C
+SnBu3 Bu3Sn
+HNBu BuNH
+OBu BuO
+CO2Bu BuO2C
+COOBu BuO2C
+BuOOC BuO2C
+SBu BuS
+Br3C CBr3
+HNCbz CbzNH
+Cl3C CCl3
+OCH CHO
+OHC CHO
+O2SCl ClSO2
+SO2Cl ClSO2
+MeO2C CO2Me
+OSO2Me MeO2SO
+BrOC COBr
+BuOC COBu
+F3COC COCF3
+ClOC COCl
+OCOC COCO
+EtOC COEt
+FOC COF
+MeOC COMe
+H3COC COMe
+Et2NOC CONEt2
+NH2OC  CONH2
+EtHNOC CONHEt
+MeHNOC CONHMe
+Me2NOC CONMe2
+HSOC  COSH
+NEt2  Et2N
+El2N  Et2N
+NE2   Et2N
+E2N   Et2N
+NEt3  Et3N
+HNEt  EtNH
+SO2NH2  H2NSO2
+H2NO2S  H2NSO2
+SO2N H2NSO2
+HNOH  HONH
+NMe2  Me2N
+MeNH MeN
+HNMe MeN
+MeOOC CO2Me
+OMs  MsO
+OMS  MsO
+OCN NCO
+SCN NCS
+AmHN  NHAm
+BnHN  NHBn
+BuHN  NHBu
+EtHN  NHEt
+HOHN NHOH
+PrHN  NHPr
+ON NO
+Et2OP  POEt2
+Et3OP  POEt3
+Et2OOP  POOEt2
+HNPr PrNH
+EtS SEt
+SMe MeS
+SCH3 MeS
+Pll Ph
+Pl  Ph
+ElO2C CO2Et
+EtOOC CO2Et
+ElOOC CO2Et
+
+OlOS OTos
+CH2CH CH2CH3
+CHCH3 CH2CH3
+H3CHC CH2CH3
+H3CH2C CH2CH3
+CCH3CH2l2N N(CH2CH3)2
+NCCH2CH3l2 N(CH2CH3)2
+CCH3CHl2N  N(CH2CH3)2
+NCCH2CH2CH3l2 N(CH2CH2CH3)2
+CCCH3l3 C(CH3)3
+CHCCH3l2 CH(CH3)2
+OCH2CO2El OCH2CO2Et
+CBOCl2N BOC2N
+NHBOC BOCHN
+NBOC BOCHN
+NHCRZ NHCbz
+NClZ NHCbz
+F3CO OCF3
+Cl3CO OCCl3
+NSO2BU NHSO2BU
+NHSO2CH3 NHSO2Me
+ElOCHN  EtO2CHN
+ElO2CHl EtO2CHN
+NHCOOEl NHCOOEt
+OEl2 OEt2
+CH2OH HOCH2
+NHCH NHCH3
+NCH3 NHCH3
+NO3S H4NO3S
+NOOC H4NOOC
+C3H C3H7
+C2H C2H5
+NNH2 NHNH2
+H3CS MeS
+NHNHCOCH NHNHCOCH3
+NNCOCH3  NHNHCOCH3
+NHNHCOCF NHNHCOCF3
+NNCOCF3  NHNHCOCF3
+CO2CYSP  CO2CysPr
+COCYSPl  CO2CysPr
+CO2CYSPl CO2CysPr
+CF3CH CF3CH2
+PPll2 PPh2
+Pll2P PPh2
+Ph2P  PPh2
+CO2M8 CO2Me
+OCH2Pll OCH2Ph
+PMoN PMBN
+lCO AcO
+XCO AcO
+OXC AcO
+CH3O MeO
+O3S SO3H
+NXeOH2C CH2OMe
+CH2ONXe CH2OMe
+CHOMe CH2OMe
+MeOHC CH2OMe
+CH3OCH2 CH2OMe
+CH2OCH3 CH2OMe
+N3Cl NH3Cl
+MeCHlN MeN
+NCHlMe MeN
+ElCHlN NHEt
+NCHlEl NHEt
+OCH2Pll OCH2Ph
+OCH2P OCH2Ph
+COOCH2P COOCH2Ph
+NeO MeO
+ONe MeO
+OCPh3 Ph3CO
+SO2CH3 SO2Me
+H3CO2S SO2Me
+CH3SO2 SO2Me
+POIOEII2 POOEt2
+SO3NI SO3Na
+OSO2Me MsO
+CH2I5Bl (CH2)5Br
+ICH2I5Bl (CH2)5Br
+CH2I5 (CH2)5
+TOS Tos
+PhO OPh
+PhS SPh
+PhHN NHPh
+
+Rl R1
+Rlo R10
+Rg R9
+Rp R4
+2 Z
+RlO R10
+Y2 Y2
+
+PMRN PMBN
+
+* Xx
+** Xx
+*** Xx
+
