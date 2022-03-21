@@ -351,7 +351,7 @@ def extract_image(filename, debug=False, allow_wildcards=False):
     for result in output:
         log.info(result)
 
-    return output
+    return output, labelled_diags
 
 
 def extract_images(dirname, debug=False, allow_wildcards=False):
