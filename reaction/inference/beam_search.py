@@ -1,5 +1,5 @@
 import torch
-from reaction.inference.decode_strategy import DecodeStrategy
+from .decode_strategy import DecodeStrategy
 
 import warnings
 

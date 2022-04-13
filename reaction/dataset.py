@@ -1,48 +1,21 @@
 import os
 import cv2
-import time
+import copy
 import random
-import re
 import json
+import contextlib
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
-from reaction.augment import SafeRotate, CropWhite, NormalizedGridDistortion, PadWhite, SaltAndPepperNoise
-from reaction.tokenizer import PAD_ID, FORMAT_INFO
+from reaction.tokenizer import FORMAT_INFO
+import reaction.transforms as T
 
-cv2.setNumThreads(1)
-
-
-def get_transforms(input_size, augment=True, debug=False):
-    trans_list = []
-    if augment:
-        trans_list.append(SafeRotate(limit=20, border_mode=cv2.BORDER_CONSTANT, value=(255, 255, 255)))
-    trans_list.append(CropWhite(pad=5))
-    if augment:
-        trans_list += [
-            # NormalizedGridDistortion(num_steps=10, distort_limit=0.3),
-            A.CropAndPad(percent=[-0.01, 0.00], keep_size=False, p=0.5),
-            PadWhite(pad_ratio=0.4, p=0.2),
-            A.Downscale(scale_min=0.15, scale_max=0.3, interpolation=3),
-            A.Blur(),
-            A.GaussNoise(),
-            SaltAndPepperNoise(num_dots=20, p=0.5)
-        ]
-    trans_list.append(A.Resize(input_size, input_size))
-    if not debug:
-        mean = [0.485, 0.456, 0.406]
-        std = [0.229, 0.224, 0.225]
-        trans_list += [
-            A.Normalize(mean=mean, std=std),
-            ToTensorV2(),
-        ]
-    return A.Compose(trans_list)
+from pycocotools.coco import COCO
+from PIL import Image
 
 
 class ReactionDataset(Dataset):
@@ -50,43 +23,105 @@ class ReactionDataset(Dataset):
         super().__init__()
         self.args = args
         self.tokenizer = tokenizer
-        with open(os.path.join(args.data_path, data_file)) as f:
-            self.image_data = json.load(f)['images']
+        data_file = os.path.join(args.data_path, data_file)
+        with open(data_file) as f:
+            self.data = json.load(f)['images']
+        with open(os.devnull, 'w') as devnull:
+            with contextlib.redirect_stdout(devnull):
+                self.coco = COCO(data_file)
         self.name = os.path.basename(data_file).split('.')[0]
         self.image_path = args.image_path
         self.split = split
         self.formats = args.formats
-        self.labelled = (split == 'train')
-        self.transform = get_transforms(args.input_size, augment=(self.labelled and args.augment))
-        # if args.debug:
-        #     self.image_data = self.image_data[:16]
-        
+        self.is_train = (split == 'train')
+        self.transform = make_coco_transforms(split, args)
+
     def __len__(self):
-        return len(self.image_data)
+        return len(self.data)
 
-    def image_transform(self, image):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        augmented = self.transform(image=image)
-        image = augmented['image']
-        return image
-
-    def __getitem__(self, idx):
+    def generate_sample(self, image, target):
         ref = {}
-        data = self.image_data[idx]
-        image = cv2.imread(os.path.join(self.image_path, data['file_name']))
-        if image is None:
-            print(data['file_name'], "doesn't exists.", flush=True)
-        image = self.image_transform(image)
-        if self.labelled:
+        image, target = self.transform(image, target)
+        if self.is_train:
             if 'reaction' in self.formats:
                 max_len = FORMAT_INFO['reaction']['max_len']
-                label = self.tokenizer['reaction'].data_to_sequence(data)
+                label = self.tokenizer['reaction'].data_to_sequence(target)
                 ref['reaction'] = torch.LongTensor(label[:max_len])
             if 'bbox' in self.formats:
                 max_len = FORMAT_INFO['bbox']['max_len']
-                label = self.tokenizer['bbox'].data_to_sequence(data)
+                label = self.tokenizer['bbox'].data_to_sequence(target)
                 ref['bbox'] = torch.LongTensor(label[:max_len])
-        return idx, image, ref
+        return image, ref
+
+    def __getitem__(self, idx):
+        target = self.data[idx]
+        path = os.path.join(self.image_path, target['file_name'])
+        if not os.path.exists(path):
+            print(path, "doesn't exists.", flush=True)
+        image = Image.open(path).convert("RGB")
+        image, target = self.prepare(image, target)
+        if self.is_train and self.args.augment:
+            image1, ref1 = self.generate_sample(image, target)
+            image2, ref2 = self.generate_sample(image, target)
+            return [[idx, image1, ref1], [idx, image2, ref2]]
+        else:
+            image, ref = self.generate_sample(image, target)
+            return [[idx, image, ref]]
+
+    def prepare(self, image, target):
+        w, h = target['width'], target['height']
+
+        image_id = target["id"]
+        image_id = torch.tensor([image_id])
+
+        anno = target["bboxes"]
+
+        boxes = [obj['bbox'] for obj in anno]
+        # guard against no boxes via resizing
+        boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
+        boxes[:, 2:] += boxes[:, :2]
+        boxes[:, 0::2].clamp_(min=0, max=w)
+        boxes[:, 1::2].clamp_(min=0, max=h)
+
+        classes = [obj["category_id"] for obj in anno]
+        classes = torch.tensor(classes, dtype=torch.int64)
+
+        keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
+        boxes = boxes[keep]
+        classes = classes[keep]
+
+        target = copy.deepcopy(target)
+        target["boxes"] = boxes
+        target["labels"] = classes
+        target["image_id"] = image_id
+
+        # for conversion to coco api
+        area = torch.tensor([obj["bbox"][2] * obj['bbox'][3] for obj in anno])
+        target["area"] = area[keep]
+
+        target["orig_size"] = torch.as_tensor([int(h), int(w)])
+        target["size"] = torch.as_tensor([int(h), int(w)])
+
+        return image, target
+
+
+def make_coco_transforms(image_set, args):
+    normalize = T.Compose([
+        T.Resize((1333, 1333)),
+        T.ToTensor(),
+        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    if image_set == 'train' and args.augment:
+        return T.Compose([
+            T.RandomHorizontalFlip(),
+            T.LargeScaleJitter(output_size=1333, aug_scale_min=0.3, aug_scale_max=2.0),
+            T.RandomDistortion(0.5, 0.5, 0.5, 0.5),
+            normalize])
+    else:
+        return T.Compose([
+            T.LargeScaleJitter(output_size=1333, aug_scale_min=1.0, aug_scale_max=1.0),
+            normalize])
 
 
 def pad_images(imgs):
@@ -104,23 +139,28 @@ def pad_images(imgs):
     return torch.stack(stack)
 
 
-def rxn_collate(batch):
-    ids = []
-    imgs = []
-    batch = [ex for ex in batch if ex[1] is not None]
-    formats = list(batch[0][2].keys())
-    seq_formats = formats
-    refs = {key: [[], []] for key in seq_formats}
-    for ex in batch:
-        ids.append(ex[0])
-        imgs.append(ex[1])
-        ref = ex[2]
+def get_collate_fn(args, tokenizer):
+
+    seq_formats = args.formats
+    pad_id = tokenizer[seq_formats[0]].PAD_ID
+
+    def rxn_collate(batch):
+        ids = []
+        imgs = []
+        batch = [ex for seq in batch for ex in seq]
+        seq_formats = list(batch[0][2].keys())
+        refs = {key: [[], []] for key in seq_formats}
+        for ex in batch:
+            ids.append(ex[0])
+            imgs.append(ex[1])
+            ref = ex[2]
+            for key in seq_formats:
+                refs[key][0].append(ref[key])
+                refs[key][1].append(torch.LongTensor([len(ref[key])]))
+        # Sequence
         for key in seq_formats:
-            refs[key][0].append(ref[key])
-            refs[key][1].append(torch.LongTensor([len(ref[key])]))
-    # Sequence
-    for key in seq_formats:
-        # this padding should work for atomtok_with_coords too, each of which has shape (length, 4)
-        refs[key][0] = pad_sequence(refs[key][0], batch_first=True, padding_value=PAD_ID)
-        refs[key][1] = torch.stack(refs[key][1]).reshape(-1, 1)
-    return ids, pad_images(imgs), refs
+            refs[key][0] = pad_sequence(refs[key][0], batch_first=True, padding_value=pad_id)
+            refs[key][1] = torch.stack(refs[key][1]).reshape(-1, 1)
+        return ids, pad_images(imgs), refs
+
+    return rxn_collate

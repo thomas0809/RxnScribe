@@ -10,7 +10,7 @@ else:
 
 
 setup(
-    name='reactiondataextractor',
+    name='reaction',
     version='0.0.1',
     author='Damian Wilary',
     author_email='dmw51@cam.ac.uk',

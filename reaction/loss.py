@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from reaction.tokenizer import PAD_ID, MASK, MASK_ID
 
 
 class LabelSmoothingLoss(nn.Module):
@@ -49,6 +48,7 @@ class SequenceLoss(nn.Module):
         self.ignore_indices = ignore_indices
         if label_smoothing == 0:
             self.criterion = nn.CrossEntropyLoss(ignore_index=ignore_index, reduction='mean')
+            # Cross entropy = KL divergence + constant
         else:
             self.criterion = LabelSmoothingLoss(label_smoothing, vocab_size, ignore_index)
 
@@ -74,12 +74,12 @@ class Criterion(nn.Module):
         super(Criterion, self).__init__()
         criterion = {}
         for format_ in args.formats:
-            criterion[format_] = SequenceLoss(args.label_smoothing, len(tokenizer[format_]), ignore_index=PAD_ID)
+            tn = tokenizer[format_]
+            criterion[format_] = SequenceLoss(args.label_smoothing, len(tn), ignore_index=tn.PAD_ID)
         self.criterion = nn.ModuleDict(criterion)
 
     def forward(self, results, refs):
         losses = {}
-        reweight_coef = refs.get('reweight_coef', None)
         for format_ in results:
             predictions, targets, *_ = results[format_]
             loss_ = self.criterion[format_](predictions, targets)
@@ -87,9 +87,6 @@ class Criterion(nn.Module):
                 losses.update(loss_)
             else:
                 if loss_.numel() > 1:
-                    if reweight_coef is not None:
-                        loss_ = (reweight_coef.to(loss_.device) * loss_).mean()
-                    else:
-                        loss_ = loss_.mean()
+                    loss_ = loss_.mean()
                 losses[format_] = loss_
         return losses
