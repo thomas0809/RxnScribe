@@ -92,3 +92,17 @@ class ReactionEvaluator(object):
         recall = gold_hits / gold_total
         f1 = precision * recall * 2 / max(precision + recall, 1e-6)
         return precision, recall, f1
+
+    def evaluate_by_size(self, groundtruths, predictions):
+        gold_groups = {}
+        for gold_image, pred_image in zip(groundtruths, predictions):
+            gh, ph = self.evaluate_image(gold_image, pred_image)
+            gtotal = len(gh)
+            if gtotal not in gold_groups:
+                gold_groups[gtotal] = {'hit': 0, 'reaction': 0, 'image': 0}
+            gold_groups[gtotal]['hit'] += sum(gh)
+            gold_groups[gtotal]['reaction'] += len(gh)
+            gold_groups[gtotal]['image'] += 1
+        for gtotal, stats in gold_groups.items():
+            gold_groups[gtotal]['recall'] = stats['hit'] / stats['reaction']
+        return gold_groups

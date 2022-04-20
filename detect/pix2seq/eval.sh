@@ -17,4 +17,4 @@ NCCL_P2P_DISABLE=1 python -m torch.distributed.launch --nproc_per_node=1 --use_e
     --batch_size 4 \
     --num_workers 2 \
     --output_dir ${OUTPUT_DIR} \
-    --resume ${FINETUNE_CKPT} --eval --pred_eos
+    --resume ${FINETUNE_CKPT} --eval #--pred_eos

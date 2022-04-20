@@ -102,17 +102,17 @@ class ReactionTokenizer(object):
             return self.offset + self.maxx + round(y * (self.maxy - 1))
         return self.offset + round(y * (self.maxy - 1))
 
-    def id_to_x(self, id):
+    def id_to_x(self, id, scale=1):
         if not self.is_x(id):
             return -1
-        return (id - self.offset) / (self.maxx - 1)
+        return (id - self.offset) / (self.maxx - 1) / scale
 
-    def id_to_y(self, id):
+    def id_to_y(self, id, scale=1):
         if not self.is_y(id):
             return -1
         if self.sep_xy:
-            return (id - self.offset - self.maxx) / (self.maxy - 1)
-        return (id - self.offset) / (self.maxy - 1)
+            return (id - self.offset - self.maxx) / (self.maxy - 1) * scale
+        return (id - self.offset) / (self.maxy - 1) / scale
 
     def bbox_to_sequence(self, bbox, category):
         sequence = []
@@ -126,11 +126,11 @@ class ReactionTokenizer(object):
         sequence.append(self.stoi[self.bbox_category_to_token[category]])
         return sequence
 
-    def sequence_to_bbox(self, sequence):
+    def sequence_to_bbox(self, sequence, scale=[1, 1]):
         if len(sequence) < 5:
             return None
-        x1, y1 = self.id_to_x(sequence[0]), self.id_to_y(sequence[1])
-        x2, y2 = self.id_to_x(sequence[2]), self.id_to_y(sequence[3])
+        x1, y1 = self.id_to_x(sequence[0], scale[0]), self.id_to_y(sequence[1], scale[1])
+        x2, y2 = self.id_to_x(sequence[2], scale[0]), self.id_to_y(sequence[3], scale[1])
         if x1 == -1 or y1 == -1 or x2 == -1 or y2 == -1 or x1 >= x2 or y1 >= y2 or sequence[4] not in self.itos:
             return None
         category = self.itos[sequence[4]]
@@ -159,7 +159,7 @@ class ReactionTokenizer(object):
         sequence.append(self.EOS_ID)
         return sequence
 
-    def sequence_to_data(self, sequence, scores=None):
+    def sequence_to_data(self, sequence, scores=None, scale=None):
         reactions = []
         i = 0
         flag = None
@@ -179,7 +179,7 @@ class ReactionTokenizer(object):
                 elif self.itos[sequence[i]] == Prd:
                     flag = 'products'
             elif i+4 < len(sequence) and len(reactions) > 0 and flag is not None:
-                bbox = self.sequence_to_bbox(sequence[i:i+5])
+                bbox = self.sequence_to_bbox(sequence[i:i+5], scale)
                 if bbox is not None:
                     reactions[-1][flag].append(bbox)
                     i += 4
@@ -207,7 +207,7 @@ class BboxTokenizer(ReactionTokenizer):
         sequence.append(self.EOS_ID)
         return sequence
 
-    def sequence_to_data(self, sequence, scores=None):
+    def sequence_to_data(self, sequence, scores=None, scale=None):
         bboxes = []
         i = 0
         if len(sequence) > 0 and sequence[0] == self.SOS_ID:
@@ -216,7 +216,7 @@ class BboxTokenizer(ReactionTokenizer):
             if sequence[i] == self.EOS_ID:
                 break
             if i+4 < len(sequence):
-                bbox = self.sequence_to_bbox(sequence[i:i+5])
+                bbox = self.sequence_to_bbox(sequence[i:i+5], scale)
                 if bbox is not None:
                     if scores is not None:
                         bbox['score'] = scores[i + 4]

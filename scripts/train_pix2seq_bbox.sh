@@ -26,12 +26,11 @@ NCCL_P2P_DISABLE=1 python main.py \
     --pix2seq \
     --pix2seq_ckpt ${PIX2SEQ_CKPT} \
     --rand_target \
-    --pred_eos \
     --augment \
     --lr 1e-4 \
     --epochs 200 \
     --warmup 0.05 \
-    --label_smoothing 0. \
+    --label_smoothing 0.1 \
     --batch_size $((BATCH_SIZE / NUM_GPUS_PER_NODE / ACCUM_STEP)) \
     --do_test \
     --gpus $NUM_GPUS_PER_NODE  #  2>&1  | tee $SAVE_PATH/log_${DATESTR}.txt

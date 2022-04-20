@@ -71,7 +71,7 @@ class Reaction(object):
         # Exact matching of two reactions
         if len(self.bboxes) != len(other.bboxes):
             return False
-        match1, match2 = get_bboxes_match(self.bboxes, other.bboxes)
+        match1, match2, scores = get_bboxes_match(self.bboxes, other.bboxes)
         if any([m == -1 for m in match1]):
             return False
         m_reactants = [match1[i] for i in self.reactants]
@@ -96,17 +96,24 @@ class ImageData(object):
         self.file_name = image_data['file_name']
         self.width = image_data['width']
         self.height = image_data['height']
-        self.bboxes = [BBox(bbox, self.width, self.height, xyxy=False, normalized=False)
+        self.gold_bboxes = [BBox(bbox, self.width, self.height, xyxy=False, normalized=False)
                        for bbox in image_data['bboxes']]
-        self.gold_reactions = [Reaction(reaction, self.bboxes) for reaction in image_data['reactions']]
-        if predictions:
-            self.pred_reactions = []
-            for reaction in predictions:
-                r = {
-                    key: [BBox(bbox, self.width, self.height, xyxy=True, normalized=True) for bbox in reaction[key]]
-                    for key in ['reactants', 'conditions', 'products']
-                }
-                self.pred_reactions.append(Reaction(r))
+        self.reaction = ('reactions' in image_data)
+        if self.reaction:
+            self.gold_reactions = [Reaction(reaction, self.gold_bboxes) for reaction in image_data['reactions']]
+        if predictions is not None:
+            if self.reaction:
+                self.pred_reactions = [
+                    Reaction({
+                        key: [BBox(bbox, self.width, self.height, xyxy=True, normalized=True) for bbox in reaction[key]]
+                        for key in ['reactants', 'conditions', 'products']
+                    })
+                    for reaction in predictions
+                ]
+            else:
+                self.pred_bboxes = [
+                    BBox(bbox, self.width, self.height, xyxy=True, normalized=True) for bbox in predictions
+                ]
 
     def evaluate(self):
         gold_total = len(self.gold_reactions)
@@ -115,7 +122,7 @@ class ImageData(object):
         pred_hit = [False] * pred_total
         for i, ri in enumerate(self.gold_reactions):
             for j, rj in enumerate(self.pred_reactions):
-                if gold_hit[i] == True and pred_hit[j] == True:
+                if gold_hit[i] and pred_hit[j]:
                     continue
                 if ri == rj:
                     gold_hit[i] = True
@@ -123,17 +130,25 @@ class ImageData(object):
         return gold_hit, pred_hit
 
     def draw_gold(self, ax, image=None):
-        if image:
+        if image is not None:
             ax.imshow(image)
-        for r in self.gold_reactions:
-            r.draw(ax)
+        if self.reaction:
+            for r in self.gold_reactions:
+                r.draw(ax)
+        else:
+            for b in self.gold_bboxes:
+                b.draw(ax)
         return
 
     def draw_prediction(self, ax, image=None):
-        if image:
+        if image is not None:
             ax.imshow(image)
-        for r in self.pred_reactions:
-            r.draw(ax)
+        if self.reaction:
+            for r in self.pred_reactions:
+                r.draw(ax)
+        else:
+            for b in self.pred_bboxes:
+                b.draw(ax)
         return
 
 
@@ -179,10 +194,10 @@ def get_bboxes_match(bboxes1, bboxes2, iou_thres=0.5, match_category=False):
     scores = np.zeros((len(bboxes1), len(bboxes2)))
     for i, bbox1 in enumerate(bboxes1):
         for j, bbox2 in enumerate(bboxes2):
-            if match_category and bbox1['category_id'] != bbox2['category_id']:
+            if match_category and bbox1.category_id != bbox2.category_id:
                 scores[i, j] = 0
             else:
-                scores[i, j] = get_iou(bbox1['bbox'], bbox2['bbox'])
+                scores[i, j] = get_iou(bbox1, bbox2)
     match1 = scores.argmax(axis=1)
     for i in range(len(match1)):
         if scores[i, match1[i]] < iou_thres:
@@ -191,4 +206,4 @@ def get_bboxes_match(bboxes1, bboxes2, iou_thres=0.5, match_category=False):
     for j in range(len(match2)):
         if scores[match2[j], j] < iou_thres:
             match2[j] = -1
-    return match1, match2
+    return match1, match2, scores

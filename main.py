@@ -12,8 +12,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, LightningDataModule
-from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
-from pytorch_lightning.utilities import rank_zero_info
+from pytorch_lightning.callbacks import LearningRateMonitor
 from transformers import get_scheduler
 
 from reaction.model import Encoder, Decoder
@@ -21,7 +20,6 @@ from reaction.pix2seq import build_pix2seq_model
 from reaction.loss import Criterion
 from reaction.tokenizer import get_tokenizer
 from reaction.dataset import ReactionDataset, get_collate_fn
-from reaction.utils import print_rank_0
 from reaction.evaluate import CocoEvaluator, ReactionEvaluator
 
 
@@ -90,6 +88,7 @@ def get_args():
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--input_size', type=int, default=224)
     parser.add_argument('--augment', action='store_true')
+    parser.add_argument('--composite_augment', action='store_true')
     parser.add_argument('--coord_bins', type=int, default=100)
     parser.add_argument('--sep_xy', action='store_true')
     # Training
@@ -170,19 +169,23 @@ class ReactionExtractor(LightningModule):
             predictions[format_] = [predictions[format_][i] for i in range(len(predictions[format_]))]
 
         name = self.eval_dataset.name
-        if 'bbox' in formats:
-            coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
-            stats = coco_evaluator.evaluate(predictions['bbox'])
-            self.log(f'{phase}/score', stats[0], prog_bar=True, rank_zero_only=True)
-        if 'reaction' in formats:
-            evaluator = ReactionEvaluator()
-            precision, recall, f1 = evaluator.evaluate(self.eval_dataset.data, predictions['reaction'])
-            self.print(f'Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
-            self.log(f'{phase}/score', f1, prog_bar=True, rank_zero_only=True)
+        scores = [0]
 
         if self.trainer.is_global_zero:
+            if 'bbox' in formats:
+                coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                stats = coco_evaluator.evaluate(predictions['bbox'])
+                scores = stats
+            elif 'reaction' in formats:
+                evaluator = ReactionEvaluator()
+                precision, recall, f1 = evaluator.evaluate(self.eval_dataset.data, predictions['reaction'])
+                self.print(f'Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                scores = [f1, precision, recall]
             with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
                 json.dump(predictions, f)
+
+        dist.broadcast_object_list(scores)
+        self.log(f'{phase}/score', scores[0], prog_bar=True, rank_zero_only=True)
 
     def test_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
@@ -192,7 +195,7 @@ class ReactionExtractor(LightningModule):
 
     def configure_optimizers(self):
         num_training_steps = self.trainer.num_training_steps
-        print_rank_0(f'Num training steps: {num_training_steps}')
+        self.print(f'Num training steps: {num_training_steps}')
         num_warmup_steps = int(num_training_steps * self.args.warmup_ratio)
         # parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.args.lr, weight_decay=self.args.weight_decay)
@@ -228,7 +231,7 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
                 probs = F.softmax(logits, dim=-1)
                 scores, preds = probs.max(dim=-1)
                 batch_preds[format_].append(
-                    self.tokenizer[format_].sequence_to_data(preds.tolist(), scores.tolist()))
+                    self.tokenizer[format_].sequence_to_data(preds.tolist(), scores.tolist(), scale=refs['scale'][i]))
         return indices, batch_preds
 
 
@@ -243,12 +246,17 @@ class ReactionDataModule(LightningDataModule):
     def prepare_data(self):
         if self.args.do_train:
             self.train_dataset = ReactionDataset(self.args, self.args.train_file, self.tokenizer, split='train')
-            print(f'Train dataset: {len(self.train_dataset)}')
         if self.args.do_train or self.args.do_valid:
             self.val_dataset = ReactionDataset(self.args, self.args.valid_file, self.tokenizer, split='valid')
-            print(f'Valid dataset: {len(self.val_dataset)}')
         if self.args.do_test:
             self.test_dataset = ReactionDataset(self.args, self.args.test_file, self.tokenizer, split='test')
+
+    def print_stats(self):
+        if self.args.do_train:
+            print(f'Train dataset: {len(self.train_dataset)}')
+        if self.args.do_train or self.args.do_valid:
+            print(f'Valid dataset: {len(self.val_dataset)}')
+        if self.args.do_test:
             print(f'Test dataset: {len(self.test_dataset)}')
 
     def train_dataloader(self):
@@ -267,6 +275,12 @@ class ReactionDataModule(LightningDataModule):
             collate_fn=self.collate_fn)
 
 
+class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
+    def _get_metric_interpolated_filepath_name(self, monitor_candidates, trainer, del_filepath=None) -> str:
+        filepath = self.format_checkpoint_name(monitor_candidates)
+        return filepath
+
+
 def main():
 
     args = get_args()
@@ -281,11 +295,12 @@ def main():
     if args.do_train:
         model = MODEL(args, tokenizer)
     else:
-        model = MODEL.load_from_checkpoint(
-            os.path.join(args.save_path, 'checkpoints/best.ckpt'), args=args, tokenizer=tokenizer)
+        model = MODEL.load_from_checkpoint(os.path.join(args.save_path, 'checkpoints/best.ckpt'),
+                                           args=args, tokenizer=tokenizer)
 
     dm = ReactionDataModule(args, tokenizer)
     dm.prepare_data()
+    # dm.print_stats()
 
     checkpoint = ModelCheckpoint(monitor='val/score', mode='max', save_top_k=1, filename='best', save_last=True)
     # checkpoint = ModelCheckpoint(monitor=None, save_top_k=0, save_last=True)
@@ -307,7 +322,8 @@ def main():
     if args.do_train:
         trainer.num_training_steps = len(dm.train_dataset) // (args.batch_size * args.gpus) * args.epochs
         model.eval_dataset = dm.val_dataset
-        trainer.fit(model, datamodule=dm)
+        ckpt_path = os.path.join(args.save_path, 'checkpoints/last.ckpt') if args.resume else None
+        trainer.fit(model, datamodule=dm, ckpt_path=ckpt_path)
         model = MODEL.load_from_checkpoint(checkpoint.best_model_path, args=args, tokenizer=tokenizer)
 
     if args.do_valid:
