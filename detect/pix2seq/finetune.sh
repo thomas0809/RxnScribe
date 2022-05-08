@@ -5,7 +5,7 @@ set -x
 
 DATA_DIR=../../data/detect/splits
 PIX2SEQ_CKPT=./ckpts/checkpoint_e299_ap370.pth
-OUTPUT_DIR=outputs/finetune
+OUTPUT_DIR=outputs/finetune_eos
 
 NCCL_P2P_DISABLE=1 python -m torch.distributed.launch --nproc_per_node=4 --use_env main.py \
     --pix2seq_lr --large_scale_jitter --model pix2seq --rand_target \

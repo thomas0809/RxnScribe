@@ -23,7 +23,7 @@ from . import settings
 
 log = logging.getLogger()
 superatom_file = os.path.join(settings.ROOT_DIR, 'dict', 'superatom.txt')
-spelling_file = os.path.join(settings.ROOT_DIR,  'dict', 'spelling.txt')
+spelling_file = os.path.join(settings.ROOT_DIR, 'dict', 'spelling.txt')
 
 
 class DiagramRecogniser:

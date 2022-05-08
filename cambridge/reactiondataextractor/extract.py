@@ -17,7 +17,6 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import json
 import logging
 from matplotlib import pyplot as plt
 import os
@@ -32,8 +31,6 @@ from .utils.io_ import imread
 from .utils.processing import mark_tiny_ccs
 
 MAIN_DIR = os.getcwd()
-
-import matplotlib
 
 log = logging.getLogger('extract')
 file_handler = logging.FileHandler(os.path.join(settings.ROOT_DIR, 'extract.log'))

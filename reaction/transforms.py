@@ -33,7 +33,7 @@ def crop(image, target, region):
     i, j, h, w = region
 
     # should we do something wrt the original size?
-    target["size"] = torch.tensor([h, w])
+    # target["size"] = torch.tensor([h, w])
 
     fields = ["labels", "area"]
 
@@ -49,17 +49,17 @@ def crop(image, target, region):
         fields.append("boxes")
 
     # remove elements for which the boxes or masks that have zero area
-    if "boxes" in target or "masks" in target:
-        # favor boxes selection when defining which elements to keep
-        # this is compatible with previous implementation
-        if "boxes" in target:
-            cropped_boxes = target['boxes'].reshape(-1, 2, 2)
-            keep = torch.all(cropped_boxes[:, 1, :] > cropped_boxes[:, 0, :], dim=1)
-        else:
-            keep = target['masks'].flatten(1).any(1)
-
-        for field in fields:
-            target[field] = target[field][keep]
+    # if "boxes" in target or "masks" in target:
+    #     # favor boxes selection when defining which elements to keep
+    #     # this is compatible with previous implementation
+    #     if "boxes" in target:
+    #         cropped_boxes = target['boxes'].reshape(-1, 2, 2)
+    #         keep = torch.all(cropped_boxes[:, 1, :] > cropped_boxes[:, 0, :], dim=1)
+    #     else:
+    #         keep = target['masks'].flatten(1).any(1)
+    #
+    #     for field in fields:
+    #         target[field] = target[field][keep]
 
     return cropped_image, target
 
@@ -76,6 +76,20 @@ def hflip(image, target):
         target["boxes"] = boxes
 
     return flipped_image, target
+
+
+def rotate90(image, target):
+    rotated_image = image.rotate(90, expand=1)
+
+    w, h = rotated_image.size
+
+    target = target.copy()
+    if "boxes" in target:
+        boxes = target["boxes"]
+        boxes = boxes[:, [1, 2, 3, 0]] * torch.as_tensor([1, -1, 1, -1]) + torch.as_tensor([0, h, 0, h])
+        target["boxes"] = boxes
+
+    return rotated_image, target
 
 
 def resize(image, target, size, max_size=None):
@@ -176,6 +190,59 @@ class CenterCrop(object):
         return crop(img, target, (crop_top, crop_left, crop_height, crop_width))
 
 
+class RandomReactionCrop(object):
+    def __init__(self):
+        pass
+
+    def __call__(self, img, target):
+        w, h = img.size
+        boxes = target["boxes"]
+        x_avail = [1] * w
+        y_avail = [1] * h
+        for reaction in target['reactions']:
+            ids = reaction['reactants'] + reaction['conditions'] + reaction['products']
+            rboxes = boxes[ids].round().int()
+            rmin, _ = rboxes.min(dim=0)
+            rmax, _ = rboxes.max(dim=0)
+            x1, x2 = (rmin[0].item(), rmax[2].item())
+            for i in range(x1, x2):
+                x_avail[i] = 0
+            y1, y2 = (rmin[1].item(), rmax[3].item())
+            for i in range(y1, y2):
+                y_avail[i] = 0
+
+        def sample_from_avail(w):
+            spans = []
+            left, right = 0, 0
+            while right < len(w):
+                while right < len(w) and w[left] == w[right]:
+                    right += 1
+                if w[left] == 1:
+                    spans.append((left, right))
+                left, right = right + 1, right + 1
+            if w[0] == 0:
+                spans = [(0, 0)] + spans
+            if w[-1] == 0:
+                spans = spans + [(len(w), len(w))]
+            if len(spans) < 2:
+                w1 = random.randint(0, len(w))
+                w2 = random.randint(0, len(w))
+            else:
+                spans = random.sample(spans, 2)
+                w1 = random.randint(*spans[0])
+                w2 = random.randint(*spans[1])
+            return min(w1, w2), max(w1, w2)
+
+        x1, x2 = sample_from_avail(x_avail)
+        y1, y2 = sample_from_avail(y_avail)
+        region = (y1, x1, y2-y1, x2-x1)
+        if x2-x1 < 30 or y2-y1 < 30:
+            # Cropped region too small
+            return img, target
+        else:
+            return crop(img, target, region)
+
+
 class RandomHorizontalFlip(object):
     def __init__(self, p=0.5):
         self.p = p
@@ -183,6 +250,16 @@ class RandomHorizontalFlip(object):
     def __call__(self, img, target):
         if random.random() < self.p:
             return hflip(img, target)
+        return img, target
+
+
+class RandomRotate(object):
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, img, target):
+        if random.random() < self.p:
+            return rotate90(img, target)
         return img, target
 
 
@@ -363,7 +440,7 @@ class LargeScaleJitter(object):
         scaled_size = (random_scale * self.desired_size).round()
 
         scale = torch.minimum(scaled_size / image_size[0], scaled_size / image_size[1])
-        scaled_size = (image_size * scale).round().int()
+        scaled_size = (image_size * scale).round().int().clamp(min=1)
 
         scaled_image = F.resize(image, scaled_size.tolist())
 

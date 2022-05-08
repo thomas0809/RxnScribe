@@ -96,8 +96,11 @@ class ImageData(object):
         self.file_name = image_data['file_name']
         self.width = image_data['width']
         self.height = image_data['height']
-        self.gold_bboxes = [BBox(bbox, self.width, self.height, xyxy=False, normalized=False)
-                       for bbox in image_data['bboxes']]
+        if 'bboxes' in image_data:
+            self.gold_bboxes = [BBox(bbox, self.width, self.height, xyxy=False, normalized=False)
+                           for bbox in image_data['bboxes']]
+        else:
+            self.gold_bboxes = []
         self.reaction = ('reactions' in image_data)
         if self.reaction:
             self.gold_reactions = [Reaction(reaction, self.gold_bboxes) for reaction in image_data['reactions']]

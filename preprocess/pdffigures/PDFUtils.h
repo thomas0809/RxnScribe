@@ -11,7 +11,7 @@
 
 #include <leptonica/allheaders.h>
 
-enum FigureType { FIGURE, TABLE };
+enum FigureType { FIGURE, TABLE, SCHEME };
 
 const char *getFigureTypeString(FigureType type);
 

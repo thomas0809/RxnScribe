@@ -33,6 +33,7 @@ def get_args():
     parser.add_argument('--gpus', type=int, default=1)
     parser.add_argument('--print_freq', type=int, default=200)
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--no_eval', action='store_true')
     # Model
     parser.add_argument('--encoder', type=str, default='resnet34')
     parser.add_argument('--decoder', type=str, default='lstm')
@@ -91,6 +92,7 @@ def get_args():
     parser.add_argument('--composite_augment', action='store_true')
     parser.add_argument('--coord_bins', type=int, default=100)
     parser.add_argument('--sep_xy', action='store_true')
+    parser.add_argument('--add_noise', action='store_true')
     # Training
     parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=256)
@@ -172,15 +174,16 @@ class ReactionExtractor(LightningModule):
         scores = [0]
 
         if self.trainer.is_global_zero:
-            if 'bbox' in formats:
-                coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
-                stats = coco_evaluator.evaluate(predictions['bbox'])
-                scores = stats
-            elif 'reaction' in formats:
-                evaluator = ReactionEvaluator()
-                precision, recall, f1 = evaluator.evaluate(self.eval_dataset.data, predictions['reaction'])
-                self.print(f'Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
-                scores = [f1, precision, recall]
+            if not self.args.no_eval:
+                if 'bbox' in formats:
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['bbox'])
+                    scores = stats
+                elif 'reaction' in formats:
+                    evaluator = ReactionEvaluator()
+                    precision, recall, f1 = evaluator.evaluate(self.eval_dataset.data, predictions['reaction'])
+                    self.print(f'Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    scores = [f1, precision, recall]
             with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
                 json.dump(predictions, f)
 
@@ -214,7 +217,8 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
 
     def training_step(self, batch, batch_idx):
         indices, images, refs = batch
-        results = {format_: self.model(images, refs[format_]) for format_ in self.args.formats}
+        results = {format_: (self.model(images, refs[format_]), refs[format_+'_out'][0][:, 1:])
+                   for format_ in self.args.formats}
         losses = self.criterion(results, refs)
         loss = sum(losses.values())
         self.log('train/loss', loss)
@@ -261,7 +265,7 @@ class ReactionDataModule(LightningDataModule):
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.train_dataset, batch_size=self.args.batch_size, num_workers=self.args.num_workers, drop_last=False,
+            self.train_dataset, batch_size=self.args.batch_size, num_workers=self.args.num_workers,
             collate_fn=self.collate_fn)
 
     def val_dataloader(self):
@@ -295,7 +299,7 @@ def main():
     if args.do_train:
         model = MODEL(args, tokenizer)
     else:
-        model = MODEL.load_from_checkpoint(os.path.join(args.save_path, 'checkpoints/best.ckpt'),
+        model = MODEL.load_from_checkpoint(os.path.join(args.save_path, 'checkpoints/best.ckpt'), strict=False,
                                            args=args, tokenizer=tokenizer)
 
     dm = ReactionDataModule(args, tokenizer)
@@ -315,6 +319,7 @@ def main():
         callbacks=[checkpoint, lr_monitor],
         max_epochs=args.epochs,
         gradient_clip_val=args.max_grad_norm,
+        accumulate_grad_batches=args.gradient_accumulation_steps,
         check_val_every_n_epoch=args.eval_per_epoch,
         log_every_n_steps=20,
         deterministic=True)

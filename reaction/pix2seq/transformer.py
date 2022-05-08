@@ -50,7 +50,7 @@ class Transformer(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, src, input_seq, mask, pos_embed):
+    def forward(self, src, input_seq, mask, pos_embed, max_len=500):
         """
         Args:
             src: shape[B, C, H, W]
@@ -91,7 +91,7 @@ class Transformer(nn.Module):
             end_lens = torch.zeros(bs).long().to(memory.device)
             input_embed = self.det_embed.weight.unsqueeze(0).repeat(bs, 1, 1).transpose(0, 1)
             pred_seq_logits = []
-            for seq_i in range(500):
+            for seq_i in range(max_len):
                 hs, pre_kv = self.decoder(
                     input_embed,
                     memory,
@@ -103,6 +103,7 @@ class Transformer(nn.Module):
 
                 if self.pred_eos:
                     is_eos = similarity[:, :, :self.num_vocal - 1].argmax(dim=-1)
+                    # is_eos = similarity.argmax(dim=-1)
                     stop_state = is_eos.squeeze(0).eq(self.num_vocal - 2)
                     end_lens += seq_i * (~end * stop_state)
                     end = (stop_state + end).bool()
@@ -110,10 +111,11 @@ class Transformer(nn.Module):
                         break
 
                 pred_token = similarity[:, :, :self.num_vocal - 2].argmax(dim=-1)
+                # pred_token = similarity.argmax(dim=-1)
                 input_embed = self.vocal_embed(pred_token)
 
             if not self.pred_eos:
-                end_lens = end_lens.fill_(500)
+                end_lens = end_lens.fill_(max_len)
             pred_seq_logits = torch.cat(pred_seq_logits, dim=1)
             pred_seq_logits = [psl[:end_idx] for end_idx, psl in zip(end_lens, pred_seq_logits)]
             return pred_seq_logits

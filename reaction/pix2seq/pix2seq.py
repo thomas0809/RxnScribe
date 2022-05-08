@@ -51,7 +51,7 @@ class Pix2Seq(nn.Module):
         if targets is not None:
             input_seq, input_len = targets
             output_logits = self.transformer(src, input_seq[:, 1:], mask, pos[-1])
-            return output_logits[:, :-1], input_seq[:, 1:]
+            return output_logits[:, :-1]
         else:
             output_logits = self.transformer(src, None, mask, pos[-1])
             return output_logits

@@ -25,7 +25,6 @@ from ..actions import find_nearby_ccs, extend_line
 from .reaction import Conditions
 from .. import settings
 
-import matplotlib
 
 class Graph(ABC):
     """

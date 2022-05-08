@@ -35,6 +35,7 @@ class ReactionDataset(Dataset):
         self.formats = args.formats
         self.is_train = (split == 'train')
         self.transform = make_transforms(split, args.augment, debug)
+        # self.reaction_transform = T.RandomReactionCrop()
 
     def __len__(self):
         return len(self.data)
@@ -46,24 +47,33 @@ class ReactionDataset(Dataset):
         ref['scale'] = target['scale']
         if self.is_train:
             if 'reaction' in self.formats:
-                max_len = FORMAT_INFO['reaction']['max_len']
-                label = self.tokenizer['reaction'].data_to_sequence(target)
+                max_len = self.tokenizer['reaction'].max_len
+                label, label_out = self.tokenizer['reaction'].data_to_sequence(
+                    target, rand_target=self.args.rand_target, add_noise=self.args.add_noise)
                 ref['reaction'] = torch.LongTensor(label[:max_len])
+                ref['reaction_out'] = torch.LongTensor(label_out[:max_len])
             if 'bbox' in self.formats:
-                max_len = FORMAT_INFO['bbox']['max_len']
-                label = self.tokenizer['bbox'].data_to_sequence(target)
+                max_len = self.tokenizer['bbox'].max_len
+                label, label_out = self.tokenizer['bbox'].data_to_sequence(
+                    target, rand_target=self.args.rand_target, add_noise=self.args.add_noise)
                 ref['bbox'] = torch.LongTensor(label[:max_len])
+                ref['bbox_out'] = torch.LongTensor(label_out[:max_len])
         return image, ref
 
     def __getitem__(self, idx):
         image, target = self.load_and_prepare(idx)
         if self.is_train and self.args.composite_augment:
-            if idx % 2 == random.randrange(2):
+            cnt = 0
+            while idx % 2 == random.randrange(2) and cnt < 5:
                 # Augment with probability 0.5
                 n = len(self)
                 idx2 = (idx + random.randrange(n)) % n
                 image2, target2 = self.load_and_prepare(idx2)
+                # if 'reaction' in self.formats:
+                #     image, target = self.reaction_transform(image, target)
+                #     image2, target2 = self.reaction_transform(image2, target2)
                 image, target = self.concat(image, target, image2, target2)
+                cnt += 1
         if self.is_train and self.args.augment:
             image1, ref1 = self.generate_sample(image, target)
             image2, ref2 = self.generate_sample(image, target)
@@ -78,7 +88,8 @@ class ReactionDataset(Dataset):
         if not os.path.exists(path):
             print(path, "doesn't exists.", flush=True)
         image = Image.open(path).convert("RGB")
-        image, target = self.prepare(image, target)
+        if self.is_train:
+            image, target = self.prepare(image, target)
         return image, target
 
     def prepare(self, image, target):
@@ -114,7 +125,7 @@ class ReactionDataset(Dataset):
 
     def concat(self, image1, target1, image2, target2):
         color = (255, 255, 255)
-        if random.random() < 0.6:
+        if random.random() < 1:
             # Vertically concat two images
             w = max(image1.width, image2.width)
             h = image1.height + image2.height
@@ -138,7 +149,7 @@ class ReactionDataset(Dataset):
         image.paste(image1, (x1, y1))
         image.paste(image2, (x2, y2))
         target = {
-            "image_id": target1["id"],
+            "image_id": target1["image_id"],
             "orig_size": torch.as_tensor([int(w), int(h)]),
             "size": torch.as_tensor([int(w), int(h)])
         }
@@ -168,6 +179,7 @@ def make_transforms(image_set, augment=False, debug=False):
 
     if image_set == 'train' and augment:
         return T.Compose([
+            T.RandomRotate(),
             T.RandomHorizontalFlip(),
             T.LargeScaleJitter(output_size=1333, aug_scale_min=0.3, aug_scale_max=2.0),
             T.RandomDistortion(0.5, 0.5, 0.5, 0.5),
@@ -195,15 +207,14 @@ def pad_images(imgs):
 
 def get_collate_fn(args, tokenizer):
 
-    seq_formats = args.formats
-    pad_id = tokenizer[seq_formats[0]].PAD_ID
+    pad_id = tokenizer[args.formats[0]].PAD_ID
 
     def rxn_collate(batch):
         ids = []
         imgs = []
         batch = [ex for seq in batch for ex in seq]
         keys = list(batch[0][2].keys())
-        seq_formats = [key for key in keys if key in ['bbox', 'reaction']]
+        seq_formats = [key for key in keys if key in ['bbox', 'bbox_out', 'reaction', 'reaction_out']]
         refs = {key: [[], []] for key in seq_formats}
         for ex in batch:
             ids.append(ex[0])

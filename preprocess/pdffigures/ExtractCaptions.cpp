@@ -7,7 +7,7 @@ namespace {
 
 // ****** Gathing caption candidates *******
 // TODO using an int as the FigureId is kind of a hack
-typedef int FigureId;
+typedef std::string FigureId;
 
 class CaptionCandidate {
 public:
@@ -23,7 +23,7 @@ public:
         number(number), page(page), periodMatch(periodMatch),
         colonMatch(colonMatch), caps(caps), abbreviated(abbreviated) {}
 
-  FigureId getId() { return number * (type == FIGURE ? 1 : -1); }
+  FigureId getId() { return (std::string)getFigureTypeString(type) + std::to_string(number); }
 
   TextWord *word;
   bool lineStart;
@@ -43,7 +43,7 @@ CaptionCandidate constructCandidate(TextWord *word, int page, bool lineStart,
     return CaptionCandidate();
 
   const std::regex wordRegex =
-      std::regex("^(Figure|(FIG)|(Fig\\.)||Fig|Table)$");
+      std::regex("^(Figure|(FIG)|(Fig\\.)||Fig|Table|Scheme)$");
   std::match_results<const char *> wordMatch;
   if (not std::regex_match(word->getText()->getCString(), wordMatch, wordRegex))
     return CaptionCandidate();
@@ -68,7 +68,15 @@ CaptionCandidate constructCandidate(TextWord *word, int page, bool lineStart,
   } else if (captionNumStr.at(captionNumStr.length() - 1) == '.') {
     periodMatch = true;
   }
-  FigureType type = wordMatch[0].str().at(0) == 'T' ? TABLE : FIGURE;
+  char firstLetter = wordMatch[0].str().at(0);
+  FigureType type;
+  if (firstLetter == 'T') {
+    type = TABLE;
+  } else if (firstLetter == 'F') {
+    type = FIGURE;
+  } else {
+    type = SCHEME;
+  }
   return CaptionCandidate(word, lineStart, blockStart, type, number, page,
                           periodMatch, colonMatch, wordMatch[2].length() > 0,
                           wordMatch[3].length() > 0);
@@ -95,7 +103,7 @@ CandidateCollection collectCandidates(const std::vector<TextPage *> &pages) {
             CaptionCandidate cc =
                 constructCandidate(word, i, lineStart, blockStart);
             if (cc.word != NULL) {
-              int id = cc.getId();
+              FigureId id = cc.getId();
               if (collection.find(id) == collection.end()) {
                 collection[id] = std::unique_ptr<std::vector<CaptionCandidate>>(
                     new std::vector<CaptionCandidate>());
@@ -288,26 +296,26 @@ extractCaptionsFromText(const std::vector<TextPage *> &textPages,
     int maxFigure = 0;
     int nTables = 0;
     int nFigures = 0;
-    for (auto &ccs : candidates) {
-      if (ccs.first > 0) {
-        nFigures++;
-        maxFigure = std::max(ccs.first, maxFigure);
-      } else {
-        nTables++;
-        maxTable = std::max(-ccs.first, maxTable);
-      }
-    }
-    if (maxTable != nTables) {
-      printf("Warning: Max table number found was %d, but only found %d table "
-             "captions!\n",
-             maxTable, nTables);
-    }
-    if (maxFigure != nFigures) {
-      printf(
-          "Warning: Max figure number found was %d, but only found %d figure "
-          "captions!\n",
-          maxFigure, nFigures);
-    }
+//    for (auto &ccs : candidates) {
+//      if (ccs.first > 0) {
+//        nFigures++;
+//        maxFigure = std::max(ccs.first, maxFigure);
+//      } else {
+//        nTables++;
+//        maxTable = std::max(-ccs.first, maxTable);
+//      }
+//    }
+//    if (maxTable != nTables) {
+//      printf("Warning: Max table number found was %d, but only found %d table "
+//             "captions!\n",
+//             maxTable, nTables);
+//    }
+//    if (maxFigure != nFigures) {
+//      printf(
+//          "Warning: Max figure number found was %d, but only found %d figure "
+//          "captions!\n",
+//          maxFigure, nFigures);
+//    }
   }
 
   std::map<int, std::vector<CaptionStart>> output =

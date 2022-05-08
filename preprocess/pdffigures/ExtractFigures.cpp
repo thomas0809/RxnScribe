@@ -139,7 +139,7 @@ double scoreBox(BOX *region, FigureType type, BOXA *bodyText,
 
   // Large graphical elements provide a strong bias, smaller or multiple
   // elements provide a lighter bias
-  if (type == FIGURE) {
+  if (type == FIGURE or type == SCHEME) {
     if (largest > 18000) {
       score += 2;
     } else if (largest > 600 or b->n > 2) {

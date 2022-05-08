@@ -43,6 +43,8 @@ const char *getFigureTypeString(FigureType type) {
     return "Figure";
   case TABLE:
     return "Table";
+  case SCHEME:
+    return "Scheme";
   default:
     throw new std::invalid_argument("Unkown FigureType");
   }

@@ -88,7 +88,7 @@ def predict_image(model, image_path):
 def main():
 
     args = get_args()
-    tokenizer = BboxTokenizer(input_size=2000, sep_xy=False, pix2seq=True, rand_target=False)
+    tokenizer = BboxTokenizer(input_size=2000, sep_xy=False, pix2seq=True)
 
     model = ReactionExtractorPix2Seq.load_from_checkpoint(
         os.path.join(args.save_path, 'checkpoints/best.ckpt'), strict=False, args=args, tokenizer=tokenizer)

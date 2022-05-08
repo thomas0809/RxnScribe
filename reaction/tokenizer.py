@@ -1,11 +1,12 @@
 import json
+import copy
 import random
 import numpy as np
 
 
 FORMAT_INFO = {
-    "reaction": {"max_len": 256},
-    "bbox": {"max_len": 400}
+    "reaction": {"max_len": 300},
+    "bbox": {"max_len": 500}
 }
 
 PAD = '<pad>'
@@ -47,6 +48,10 @@ class ReactionTokenizer(object):
             return self.offset + max(self.maxx, self.maxy)
 
     @property
+    def max_len(self):
+        return 256
+
+    @property
     def PAD_ID(self):
         return self.stoi[PAD]
 
@@ -61,6 +66,10 @@ class ReactionTokenizer(object):
     @property
     def UNK_ID(self):
         return self.stoi[UNK]
+
+    @property
+    def NOISE_ID(self):
+        return self.stoi[Noise]
 
     @property
     def offset(self):
@@ -93,10 +102,18 @@ class ReactionTokenizer(object):
         return 0 <= y - self.offset < self.maxy
 
     def x_to_id(self, x):
+        if x < -0.001 or x > 1.001:
+            print(x)
+        else:
+            x = min(max(x, 0), 1)
         assert 0 <= x <= 1
         return self.offset + round(x * (self.maxx - 1))
 
     def y_to_id(self, y):
+        if y < -0.001 or y > 1.001:
+            print(y)
+        else:
+            y = min(max(y, 0), 1)
         assert 0 <= y <= 1
         if self.sep_xy:
             return self.offset + self.maxx + round(y * (self.maxy - 1))
@@ -114,6 +131,35 @@ class ReactionTokenizer(object):
             return (id - self.offset - self.maxx) / (self.maxy - 1) * scale
         return (id - self.offset) / (self.maxy - 1) / scale
 
+    def random_category(self):
+        return random.choice(list(self.bbox_category_to_token.keys()))
+        # return random.choice([random.choice(list(self.bbox_category_to_token.keys())), self.NOISE_ID])
+
+    def random_bbox(self):
+        _x1, _y1, _x2, _y2 = random.random(), random.random(), random.random(), random.random()
+        x1, y1, x2, y2 = min(_x1, _x2), min(_y1, _y2), max(_x1, _x2), max(_y1, _y2)
+        category = self.random_category()
+        return [x1, y1, x2, y2], category
+
+    def jitter_bbox(self, bbox, ratio=0.2):
+        x1, y1, x2, y2 = bbox
+        w, h = x2 - x1, y2 - y1
+        _x1 = x1 + random.uniform(-w*ratio, w*ratio)
+        _y1 = y1 + random.uniform(-h*ratio, h*ratio)
+        _x2 = x2 + random.uniform(-w * ratio, w * ratio)
+        _y2 = y2 + random.uniform(-h * ratio, h * ratio)
+        x1, y1, x2, y2 = min(_x1, _x2), min(_y1, _y2), max(_x1, _x2), max(_y1, _y2)
+        category = self.random_category()
+        return np.clip([x1, y1, x2, y2], 0, 1), category
+
+    def augment_box(self, bboxes):
+        if len(bboxes) == 0:
+            return self.random_bbox()
+        if random.random() < 0.5:
+            return self.random_bbox()
+        else:
+            return self.jitter_bbox(random.choice(bboxes))
+
     def bbox_to_sequence(self, bbox, category):
         sequence = []
         x1, y1, x2, y2 = bbox
@@ -123,7 +169,10 @@ class ReactionTokenizer(object):
         sequence.append(self.y_to_id(y1))
         sequence.append(self.x_to_id(x2))
         sequence.append(self.y_to_id(y2))
-        sequence.append(self.stoi[self.bbox_category_to_token[category]])
+        if category in self.bbox_category_to_token:
+            sequence.append(self.stoi[self.bbox_category_to_token[category]])
+        else:
+            sequence.append(self.stoi[Noise])
         return sequence
 
     def sequence_to_bbox(self, sequence, scale=[1, 1]):
@@ -138,9 +187,12 @@ class ReactionTokenizer(object):
             return None
         return {'category': category, 'bbox': (x1, y1, x2, y2), 'category_id': self.token_to_bbox_category[category]}
 
-    def data_to_sequence(self, data):
+    def data_to_sequence(self, data, add_noise=False, rand_target=False):
         sequence = [self.SOS_ID]
-        for reaction in data['reactions']:
+        reactions = copy.deepcopy(data['reactions'])
+        if rand_target:
+            random.shuffle(reactions)
+        for reaction in reactions:
             reactants = reaction['reactants']
             conditions = reaction['conditions']
             products = reaction['products']
@@ -157,7 +209,7 @@ class ReactionTokenizer(object):
             for idx in products:
                 sequence += self.bbox_to_sequence(data['boxes'][idx].tolist(), data['labels'][idx].item())
         sequence.append(self.EOS_ID)
-        return sequence
+        return sequence, sequence
 
     def sequence_to_data(self, sequence, scores=None, scale=None):
         reactions = []
@@ -189,13 +241,17 @@ class ReactionTokenizer(object):
 
 class BboxTokenizer(ReactionTokenizer):
 
-    def __init__(self, input_size=100, sep_xy=True, pix2seq=False, rand_target=False):
+    def __init__(self, input_size=100, sep_xy=True, pix2seq=False):
         super(BboxTokenizer, self).__init__(input_size, sep_xy, pix2seq)
-        self.rand_target = rand_target
 
-    def data_to_sequence(self, data):
+    @property
+    def max_len(self):
+        return 500
+
+    def data_to_sequence(self, data, add_noise=False, rand_target=False):
         sequence = [self.SOS_ID]
-        if self.rand_target:
+        sequence_out = [self.SOS_ID]
+        if rand_target:
             perm = np.random.permutation(len(data['boxes']))
             boxes = data['boxes'][perm].tolist()
             labels = data['labels'][perm].tolist()
@@ -203,9 +259,18 @@ class BboxTokenizer(ReactionTokenizer):
             boxes = data['boxes'].tolist()
             labels = data['labels'].tolist()
         for bbox, category in zip(boxes, labels):
-            sequence += self.bbox_to_sequence(bbox, category)
+            seq = self.bbox_to_sequence(bbox, category)
+            sequence += seq
+            # sequence[-1] = self.random_category()
+            sequence_out += seq
+        if add_noise:
+            while len(sequence) < self.max_len:
+                bbox, category = self.augment_box(boxes)
+                sequence += self.bbox_to_sequence(bbox, category)
+                sequence_out += [self.PAD_ID] * 4 + [self.NOISE_ID]
         sequence.append(self.EOS_ID)
-        return sequence
+        sequence_out.append(self.EOS_ID)
+        return sequence, sequence_out
 
     def sequence_to_data(self, sequence, scores=None, scale=None):
         bboxes = []
@@ -235,5 +300,5 @@ def get_tokenizer(args):
         if format_ == 'reaction':
             tokenizer[format_] = ReactionTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
         if format_ == 'bbox':
-            tokenizer[format_] = BboxTokenizer(args.coord_bins, args.sep_xy, args.pix2seq, args.rand_target)
+            tokenizer[format_] = BboxTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
     return tokenizer
