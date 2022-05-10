@@ -70,7 +70,8 @@ class ReactionExtractorPix2Seq(LightningModule):
         data = [self.transform(image) for image in images]
         images = torch.stack([image for image, target in data]).cuda()
         targets = [target for image, target in data]
-        pred_logits = self.model(images)
+        with torch.no_grad():
+            pred_logits = self.model(images)
         predictions = []
         for i, logits in enumerate(pred_logits):
             probs = F.softmax(logits, dim=-1)
@@ -82,7 +83,7 @@ class ReactionExtractorPix2Seq(LightningModule):
 
 def predict_image(model, image_path):
     image = Image.open(image_path).convert("RGB")
-    return model.predict([image])[0]
+    return model.predict([image]*4)[0]
 
 
 def main():
