@@ -18,7 +18,7 @@ NCCL_P2P_DISABLE=1 python main.py \
     --data_path preprocess \
     --image_path preprocess/images \
     --save_path $SAVE_PATH \
-    --test_file scheme.json \
+    --test_file singlerxn.json \
     --formats reaction \
     --input_size 1333 \
     --pix2seq \

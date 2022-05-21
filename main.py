@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import math
 import json
 import random
 import argparse
@@ -110,9 +111,7 @@ def get_args():
     parser.add_argument('--save_mode', type=str, default='best', choices=['best', 'all', 'last'])
     parser.add_argument('--load_ckpt', type=str, default='best')
     parser.add_argument('--resume', action='store_true')
-    parser.add_argument('--init_scheduler', action='store_true')
-    parser.add_argument('--trunc_train', type=int, default=None)
-    parser.add_argument('--trunc_valid', type=int, default=None)
+    parser.add_argument('--num_train_example', type=int, default=None)
     parser.add_argument('--label_smoothing', type=float, default=0.0)
     parser.add_argument('--save_image', action='store_true')
     # Inference
@@ -178,12 +177,21 @@ class ReactionExtractor(LightningModule):
                 if 'bbox' in formats:
                     coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
                     stats = coco_evaluator.evaluate(predictions['bbox'])
-                    scores = stats
+                    scores = results = stats
                 elif 'reaction' in formats:
                     evaluator = ReactionEvaluator()
                     precision, recall, f1 = evaluator.evaluate(self.eval_dataset.data, predictions['reaction'])
-                    self.print(f'Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
-                    scores = [f1, precision, recall]
+                    epoch = self.trainer.current_epoch
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    scores = [precision, recall, f1]
+                    results = evaluator.evaluate_by_size(self.eval_dataset.data, predictions['reaction'])
+                    results['overall'] = {'precision': precision, 'recall': recall, 'f1': f1}
+                    self.log(f'{phase}/single', results['<=2']['f1'], rank_zero_only=True)
+                    self.log(f'{phase}/multiple', results['>2']['f1'], rank_zero_only=True)
+                else:
+                    raise NotImplementedError
+                with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
+                    json.dump(results, f)
             with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
                 json.dump(predictions, f)
 
@@ -304,7 +312,7 @@ def main():
 
     dm = ReactionDataModule(args, tokenizer)
     dm.prepare_data()
-    # dm.print_stats()
+    dm.print_stats()
 
     checkpoint = ModelCheckpoint(monitor='val/score', mode='max', save_top_k=1, filename='best', save_last=True)
     # checkpoint = ModelCheckpoint(monitor=None, save_top_k=0, save_last=True)
@@ -321,11 +329,12 @@ def main():
         gradient_clip_val=args.max_grad_norm,
         accumulate_grad_batches=args.gradient_accumulation_steps,
         check_val_every_n_epoch=args.eval_per_epoch,
-        log_every_n_steps=20,
+        log_every_n_steps=10,
         deterministic=True)
 
     if args.do_train:
-        trainer.num_training_steps = len(dm.train_dataset) // (args.batch_size * args.gpus) * args.epochs
+        trainer.num_training_steps = math.ceil(
+            len(dm.train_dataset) / (args.batch_size * args.gpus * args.gradient_accumulation_steps)) * args.epochs
         model.eval_dataset = dm.val_dataset
         ckpt_path = os.path.join(args.save_path, 'checkpoints/last.ckpt') if args.resume else None
         trainer.fit(model, datamodule=dm, ckpt_path=ckpt_path)

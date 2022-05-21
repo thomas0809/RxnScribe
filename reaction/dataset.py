@@ -26,9 +26,12 @@ class ReactionDataset(Dataset):
         data_file = os.path.join(args.data_path, data_file)
         with open(data_file) as f:
             self.data = json.load(f)['images']
-        with open(os.devnull, 'w') as devnull:
-            with contextlib.redirect_stdout(devnull):
-                self.coco = COCO(data_file)
+        if split == 'train' and args.num_train_example is not None:
+            self.data = self.data[:args.num_train_example]
+        if split != 'train':
+            with open(os.devnull, 'w') as devnull:
+                with contextlib.redirect_stdout(devnull):
+                    self.coco = COCO(data_file)
         self.name = os.path.basename(data_file).split('.')[0]
         self.image_path = args.image_path
         self.split = split

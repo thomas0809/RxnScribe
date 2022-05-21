@@ -99,10 +99,22 @@ class ReactionEvaluator(object):
             gh, ph = self.evaluate_image(gold_image, pred_image)
             gtotal = len(gh)
             if gtotal not in gold_groups:
-                gold_groups[gtotal] = {'hit': 0, 'reaction': 0, 'image': 0}
-            gold_groups[gtotal]['hit'] += sum(gh)
-            gold_groups[gtotal]['reaction'] += len(gh)
+                gold_groups[gtotal] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
+            gold_groups[gtotal]['gold_hits'] += sum(gh)
+            gold_groups[gtotal]['gold_total'] += len(gh)
+            gold_groups[gtotal]['pred_hits'] += sum(ph)
+            gold_groups[gtotal]['pred_total'] += len(ph)
             gold_groups[gtotal]['image'] += 1
+        gold_groups['<=2'] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
+        gold_groups['>2'] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
         for gtotal, stats in gold_groups.items():
-            gold_groups[gtotal]['recall'] = stats['hit'] / stats['reaction']
+            if type(gtotal) is int:
+                output = gold_groups['<=2'] if gtotal <= 2 else gold_groups['>2']
+                for key in stats:
+                    output[key] += stats[key]
+        for gtotal, stats in gold_groups.items():
+            precision = stats['pred_hits'] / max(stats['pred_total'], 1)
+            recall = stats['gold_hits'] / stats['gold_total']
+            f1 = precision * recall * 2 / max(precision + recall, 1e-6)
+            gold_groups[gtotal].update({'precision': precision, 'recall': recall, 'f1': f1})
         return gold_groups
