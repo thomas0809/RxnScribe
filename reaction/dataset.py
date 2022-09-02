@@ -19,20 +19,23 @@ from PIL import Image
 
 
 class ReactionDataset(Dataset):
-    def __init__(self, args, data_file, tokenizer, split='train', debug=False):
+    def __init__(self, args, tokenizer, data_file=None, image_files=None, split='train', debug=False):
         super().__init__()
         self.args = args
         self.tokenizer = tokenizer
-        data_file = os.path.join(args.data_path, data_file)
-        with open(data_file) as f:
-            self.data = json.load(f)['images']
-        if split == 'train' and args.num_train_example is not None:
-            self.data = self.data[:args.num_train_example]
-        if split != 'train':
-            with open(os.devnull, 'w') as devnull:
-                with contextlib.redirect_stdout(devnull):
-                    self.coco = COCO(data_file)
-        self.name = os.path.basename(data_file).split('.')[0]
+        if data_file:
+            data_file = os.path.join(args.data_path, data_file)
+            with open(data_file) as f:
+                self.data = json.load(f)['images']
+            if split == 'train' and args.num_train_example is not None:
+                self.data = self.data[:args.num_train_example]
+            if split != 'train':
+                with open(os.devnull, 'w') as devnull:
+                    with contextlib.redirect_stdout(devnull):
+                        self.coco = COCO(data_file)
+            self.name = os.path.basename(data_file).split('.')[0]
+        if image_files:
+            self.data = [{'file_name': file} for file in image_files]
         self.image_path = args.image_path
         self.split = split
         self.formats = args.formats
@@ -42,6 +45,10 @@ class ReactionDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+    @property
+    def pad_id(self):
+        return self.tokenizer[self.args.formats[0]].PAD_ID
 
     def generate_sample(self, image, target):
         ref = {}
@@ -208,9 +215,7 @@ def pad_images(imgs):
     return torch.stack(stack)
 
 
-def get_collate_fn(args, tokenizer):
-
-    pad_id = tokenizer[args.formats[0]].PAD_ID
+def get_collate_fn(pad_id):
 
     def rxn_collate(batch):
         ids = []

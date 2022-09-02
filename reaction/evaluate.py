@@ -114,7 +114,7 @@ class ReactionEvaluator(object):
                     output[key] += stats[key]
         for gtotal, stats in gold_groups.items():
             precision = stats['pred_hits'] / max(stats['pred_total'], 1)
-            recall = stats['gold_hits'] / stats['gold_total']
+            recall = stats['gold_hits'] / max(stats['gold_total'], 1)
             f1 = precision * recall * 2 / max(precision + recall, 1e-6)
             gold_groups[gtotal].update({'precision': precision, 'recall': recall, 'f1': f1})
         return gold_groups

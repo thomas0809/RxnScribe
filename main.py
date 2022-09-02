@@ -22,9 +22,10 @@ from reaction.loss import Criterion
 from reaction.tokenizer import get_tokenizer
 from reaction.dataset import ReactionDataset, get_collate_fn
 from reaction.evaluate import CocoEvaluator, ReactionEvaluator
+import reaction.utils as utils
 
 
-def get_args():
+def get_args(notebook=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_valid', action='store_true')
@@ -94,6 +95,7 @@ def get_args():
     parser.add_argument('--coord_bins', type=int, default=100)
     parser.add_argument('--sep_xy', action='store_true')
     parser.add_argument('--add_noise', action='store_true')
+    parser.add_argument('--images', type=str, default='')
     # Training
     parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=256)
@@ -117,9 +119,11 @@ def get_args():
     # Inference
     parser.add_argument('--beam_size', type=int, default=1)
     parser.add_argument('--n_best', type=int, default=1)
-    args = parser.parse_args()
+    args = parser.parse_args([]) if notebook else parser.parse_args()
 
     args.formats = args.formats.split(',')
+    assert len(args.formats) == 1
+    args.images = args.images.split(',')
 
     return args
 
@@ -162,12 +166,7 @@ class ReactionExtractor(LightningModule):
             gathered_outputs = outputs
 
         formats = self.args.formats
-        predictions = {format_: {} for format_ in formats}
-        for format_ in formats:
-            for indices, batch_preds in gathered_outputs:
-                for idx, preds in zip(indices, batch_preds[format_]):
-                    predictions[format_][idx] = preds
-            predictions[format_] = [predictions[format_][i] for i in range(len(predictions[format_]))]
+        predictions = utils.merge_predictions(gathered_outputs)
 
         name = self.eval_dataset.name
         scores = [0]
@@ -203,6 +202,9 @@ class ReactionExtractor(LightningModule):
 
     def test_epoch_end(self, outputs):
         return self.validation_epoch_end(outputs, phase='test')
+
+    def predict_step(self, batch, batch_idx):
+        return self.validation_step(batch, batch_idx)
 
     def configure_optimizers(self):
         num_training_steps = self.trainer.num_training_steps
@@ -245,6 +247,13 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
                 batch_preds[format_].append(
                     self.tokenizer[format_].sequence_to_data(preds.tolist(), scores.tolist(), scale=refs['scale'][i]))
         return indices, batch_preds
+    #
+    # def predict(self, images):
+    #     # images: a list of PIL images
+    #     batch = [[(i,) + self.predict_dataset.generate_sample(image, {})] for i, image in enumerate(images)]
+    #     batch = self.predict_collate_fn(batch)
+    #     _, predictions = self.validation_step(batch, [])
+    #     return predictions
 
 
 class ReactionDataModule(LightningDataModule):
@@ -253,15 +262,20 @@ class ReactionDataModule(LightningDataModule):
         super().__init__()
         self.args = args
         self.tokenizer = tokenizer
-        self.collate_fn = get_collate_fn(args, tokenizer)
+        self.collate_fn = get_collate_fn(self.pad_id)
+
+    @property
+    def pad_id(self):
+        return self.tokenizer[self.args.formats[0]].PAD_ID
 
     def prepare_data(self):
-        if self.args.do_train:
-            self.train_dataset = ReactionDataset(self.args, self.args.train_file, self.tokenizer, split='train')
+        args = self.args
+        if args.do_train:
+            self.train_dataset = ReactionDataset(args, self.tokenizer, args.train_file, split='train')
         if self.args.do_train or self.args.do_valid:
-            self.val_dataset = ReactionDataset(self.args, self.args.valid_file, self.tokenizer, split='valid')
+            self.val_dataset = ReactionDataset(args, self.tokenizer, args.valid_file, split='valid')
         if self.args.do_test:
-            self.test_dataset = ReactionDataset(self.args, self.args.test_file, self.tokenizer, split='test')
+            self.test_dataset = ReactionDataset(args, self.tokenizer, args.test_file, split='test')
 
     def print_stats(self):
         if self.args.do_train:
