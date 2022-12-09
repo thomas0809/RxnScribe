@@ -1,11 +1,3 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
-"""
-COCO evaluator that works in distributed mode.
-
-Mostly copy-paste from https://github.com/pytorch/vision/blob/edfd5a7/references/detection/coco_eval.py
-The difference is that there is less copy-pasting from pycocotools
-in the end of the file, as python3 can suppress prints with contextlib
-"""
 import os
 import contextlib
 import copy
@@ -76,45 +68,58 @@ def convert_to_xywh(box, width, height):
 
 class ReactionEvaluator(object):
 
-    def evaluate_image(self, gold_image, pred_image):
+    def evaluate_image(self, gold_image, pred_image, **kwargs):
         data = ImageData(gold_image, pred_image)
-        return data.evaluate()
+        return data.evaluate(**kwargs)
 
-    def evaluate(self, groundtruths, predictions):
+    def compute_metrics(self, gold_hits, gold_total, pred_hits, pred_total):
+        precision = pred_hits / max(pred_total, 1)
+        recall = gold_hits / max(gold_total, 1)
+        f1 = precision * recall * 2 / max(precision + recall, 1e-6)
+        return {'precision': precision, 'recall': recall, 'f1': f1}
+
+    def evaluate(self, groundtruths, predictions, **kwargs):
         gold_hits, gold_total, pred_hits, pred_total = 0, 0, 0, 0
         for gold_image, pred_image in zip(groundtruths, predictions):
-            gh, ph = self.evaluate_image(gold_image, pred_image)
+            gh, ph = self.evaluate_image(gold_image, pred_image, **kwargs)
             gold_hits += sum(gh)
             gold_total += len(gh)
             pred_hits += sum(ph)
             pred_total += len(ph)
-        precision = pred_hits / max(pred_total, 1)
-        recall = gold_hits / gold_total
-        f1 = precision * recall * 2 / max(precision + recall, 1e-6)
-        return precision, recall, f1
+        return self.compute_metrics(gold_hits, gold_total, pred_hits, pred_total)
 
-    def evaluate_by_size(self, groundtruths, predictions):
-        gold_groups = {}
+    def evaluate_by_size(self, groundtruths, predictions, **kwargs):
+        group_stats = {}
         for gold_image, pred_image in zip(groundtruths, predictions):
-            gh, ph = self.evaluate_image(gold_image, pred_image)
+            gh, ph = self.evaluate_image(gold_image, pred_image, **kwargs)
             gtotal = len(gh)
-            if gtotal not in gold_groups:
-                gold_groups[gtotal] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
-            gold_groups[gtotal]['gold_hits'] += sum(gh)
-            gold_groups[gtotal]['gold_total'] += len(gh)
-            gold_groups[gtotal]['pred_hits'] += sum(ph)
-            gold_groups[gtotal]['pred_total'] += len(ph)
-            gold_groups[gtotal]['image'] += 1
-        gold_groups['<=2'] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
-        gold_groups['>2'] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
-        for gtotal, stats in gold_groups.items():
-            if type(gtotal) is int:
-                output = gold_groups['<=2'] if gtotal <= 2 else gold_groups['>2']
+            if gtotal not in group_stats:
+                group_stats[gtotal] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
+            group_stats[gtotal]['gold_hits'] += sum(gh)
+            group_stats[gtotal]['gold_total'] += len(gh)
+            group_stats[gtotal]['pred_hits'] += sum(ph)
+            group_stats[gtotal]['pred_total'] += len(ph)
+            group_stats[gtotal]['image'] += 1
+        group_scores = {}
+        for gtotal, stats in group_stats.items():
+            group_scores[gtotal] = self.compute_metrics(
+                stats['gold_hits'], stats['gold_total'], stats['pred_hits'], stats['pred_total'])
+        return group_scores, group_stats
+
+    def evaluate_summarize(self, groundtruths, predictions, **kwargs):
+        group_scores, group_stats = self.evaluate_by_size(groundtruths, predictions, **kwargs)
+        summarize = {
+            'overall': {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0},
+            'single': {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0},
+            'multiple': {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
+        }
+        for group, stats in group_stats.items():
+            if type(group) is int:
+                output = summarize['single'] if group <= 1 else summarize['multiple']
                 for key in stats:
                     output[key] += stats[key]
-        for gtotal, stats in gold_groups.items():
-            precision = stats['pred_hits'] / max(stats['pred_total'], 1)
-            recall = stats['gold_hits'] / max(stats['gold_total'], 1)
-            f1 = precision * recall * 2 / max(precision + recall, 1e-6)
-            gold_groups[gtotal].update({'precision': precision, 'recall': recall, 'f1': f1})
-        return gold_groups
+                    summarize['overall'][key] += stats[key]
+        scores = {}
+        for key, val in summarize.items():
+            scores[key] = self.compute_metrics(val['gold_hits'], val['gold_total'], val['pred_hits'], val['pred_total'])
+        return scores, summarize, group_stats

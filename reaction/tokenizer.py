@@ -4,11 +4,6 @@ import random
 import numpy as np
 
 
-FORMAT_INFO = {
-    "reaction": {"max_len": 300},
-    "bbox": {"max_len": 500}
-}
-
 PAD = '<pad>'
 SOS = '<sos>'
 EOS = '<eos>'
@@ -187,29 +182,179 @@ class ReactionTokenizer(object):
             return None
         return {'category': category, 'bbox': (x1, y1, x2, y2), 'category_id': self.token_to_bbox_category[category]}
 
+    def perturb_reaction(self, reaction, boxes):
+        reaction = copy.deepcopy(reaction)
+        options = []
+        options.append(0)  # Option 0: add
+        if not(len(reaction['reactants']) == 1 and len(reaction['conditions']) == 0 and len(reaction['products']) == 1):
+            options.append(1)  # Option 1: delete
+            options.append(2)  # Option 2: move
+        choice = random.choice(options)
+        if choice == 0:
+            key = random.choice(['reactants', 'conditions', 'products'])
+            # TODO: insert to a random position
+            # We simply add a random box, which may be a duplicate box in this reaction
+            reaction[key].append(random.randrange(len(boxes)))
+        if choice == 1 or choice == 2:
+            options = []
+            for key, val in [('reactants', 1), ('conditions', 0), ('products', 1)]:
+                if len(reaction[key]) > val:
+                    options.append(key)
+            key = random.choice(options)
+            idx = random.randrange(len(reaction[key]))
+            del_box = reaction[key][idx]
+            reaction[key] = reaction[key][:idx] + reaction[key][idx+1:]
+            if choice == 2:
+                options = ['reactants', 'conditions', 'products']
+                options.remove(key)
+                newkey = random.choice(options)
+                reaction[newkey].append(del_box)
+        return reaction
+
+    def augment_reaction(self, reactions, data):
+        area, boxes, labels = data['area'], data['boxes'], data['labels']
+        nonempty_boxes = [i for i in range(len(area)) if area[i] > 0]
+        if len(nonempty_boxes) == 0:
+            return []
+        if random.randrange(100) < 10:
+            num_reactants = random.randint(1, 3)
+            num_conditions = random.randint(0, 3)
+            num_products = random.randint(1, 3)
+            reaction = {
+                'reactants': random.choices(nonempty_boxes, k=num_reactants),
+                'conditions': random.choices(nonempty_boxes, k=num_conditions),
+                'products': random.choices(nonempty_boxes, k=num_products)
+            }
+        else:
+            if len(reactions) == 0:
+                return []
+            reaction = self.perturb_reaction(random.choice(reactions), boxes)
+        seq = self.reaction_to_sequence(reaction, data)
+        return seq
+
+    def reaction_to_sequence(self, reaction, data):
+        area, boxes, labels = data['area'], data['boxes'], data['labels']
+        # If reactants or products are empty (because of image cropping), skip the reaction
+        if all([area[i] == 0 for i in reaction['reactants']]) or all([area[i] == 0 for i in reaction['products']]):
+            return []
+        sequence = []
+        for idx in reaction['reactants']:
+            if area[idx] == 0:
+                continue
+            sequence += self.bbox_to_sequence(boxes[idx].tolist(), labels[idx].item())
+        sequence.append(self.stoi[Rct])
+        for idx in reaction['conditions']:
+            if area[idx] == 0:
+                continue
+            sequence += self.bbox_to_sequence(boxes[idx].tolist(), labels[idx].item())
+        sequence.append(self.stoi[Cnd])
+        for idx in reaction['products']:
+            if area[idx] == 0:
+                continue
+            sequence += self.bbox_to_sequence(boxes[idx].tolist(), labels[idx].item())
+        sequence.append(self.stoi[Prd])
+        sequence.append(self.stoi[Rxn])
+        return sequence
+
     def data_to_sequence(self, data, add_noise=False, rand_target=False):
         sequence = [self.SOS_ID]
         reactions = copy.deepcopy(data['reactions'])
         if rand_target:
             random.shuffle(reactions)
         for reaction in reactions:
-            reactants = reaction['reactants']
-            conditions = reaction['conditions']
-            products = reaction['products']
-            if all([data['area'][i] == 0 for i in reactants]) or all([data['area'][i] == 0 for i in products]):
-                continue
-            sequence.append(self.stoi[Rxn])
-            sequence.append(self.stoi[Rct])
-            for idx in reactants:
-                sequence += self.bbox_to_sequence(data['boxes'][idx].tolist(), data['labels'][idx].item())
-            sequence.append(self.stoi[Cnd])
-            for idx in conditions:
-                sequence += self.bbox_to_sequence(data['boxes'][idx].tolist(), data['labels'][idx].item())
-            sequence.append(self.stoi[Prd])
-            for idx in products:
-                sequence += self.bbox_to_sequence(data['boxes'][idx].tolist(), data['labels'][idx].item())
+            sequence += self.reaction_to_sequence(reaction, data)
+        sequence_out = copy.deepcopy(sequence)
+        if add_noise:
+            while len(sequence) < self.max_len:
+                seq = self.augment_reaction(reactions, data)
+                if len(seq) == 0:
+                    break
+                sequence += seq
+                seq_out = [self.PAD_ID] * len(seq)
+                seq_out[-1] = self.NOISE_ID
+                sequence_out += seq_out
         sequence.append(self.EOS_ID)
-        return sequence, sequence
+        sequence_out.append(self.EOS_ID)
+        return sequence, sequence_out
+
+    def sequence_to_data(self, sequence, scores=None, scale=None):
+        reactions = []
+        i = 0
+        cur_reaction = {'reactants': [], 'conditions': [], 'products': []}
+        flag = 'reactants'
+        if len(sequence) > 0 and sequence[0] == self.SOS_ID:
+            i += 1
+        while i < len(sequence):
+            if sequence[i] == self.EOS_ID:
+                break
+            if sequence[i] in self.itos:
+                if self.itos[sequence[i]] == Rxn:
+                    if len(cur_reaction['reactants']) > 0 and len(cur_reaction['products']) > 0:
+                        reactions.append(cur_reaction)
+                    cur_reaction = {'reactants': [], 'conditions': [], 'products': []}
+                    flag = 'reactants'
+                elif self.itos[sequence[i]] == Rct:
+                    flag = 'conditions'
+                elif self.itos[sequence[i]] == Cnd:
+                    flag = 'products'
+                elif self.itos[sequence[i]] == Prd:
+                    flag = None
+            elif i+5 <= len(sequence) and flag is not None:
+                bbox = self.sequence_to_bbox(sequence[i:i+5], scale)
+                if bbox is not None:
+                    cur_reaction[flag].append(bbox)
+                    i += 4
+            i += 1
+        return reactions
+
+class OldReactionTokenizer(ReactionTokenizer):
+
+    def reaction_to_sequence(self, reaction, data):
+        area, boxes, labels = data['area'], data['boxes'], data['labels']
+        # If reactants or products are empty (because of image cropping), skip the reaction
+        if all([area[i] == 0 for i in reaction['reactants']]) or all([area[i] == 0 for i in reaction['products']]):
+            return []
+        sequence = [self.stoi[Rxn]]
+        sequence.append(self.stoi[Rct])
+        for idx in reaction['reactants']:
+            if area[idx] == 0:
+                continue
+            sequence += self.bbox_to_sequence(boxes[idx].tolist(), labels[idx].item())
+        sequence.append(self.stoi[Cnd])
+        for idx in reaction['conditions']:
+            if area[idx] == 0:
+                continue
+            sequence += self.bbox_to_sequence(boxes[idx].tolist(), labels[idx].item())
+        sequence.append(self.stoi[Prd])
+        for idx in reaction['products']:
+            if area[idx] == 0:
+                continue
+            sequence += self.bbox_to_sequence(boxes[idx].tolist(), labels[idx].item())
+        return sequence
+
+    def data_to_sequence(self, data, add_noise=False, rand_target=False):
+        sequence = [self.SOS_ID]
+        reactions = copy.deepcopy(data['reactions'])
+        if rand_target:
+            random.shuffle(reactions)
+        for reaction in reactions:
+            sequence += self.reaction_to_sequence(reaction, data)
+        sequence_out = copy.deepcopy(sequence)
+        if add_noise:
+            first = True
+            while len(sequence) < self.max_len:
+                seq = self.augment_reaction(reactions, data)
+                if len(seq) == 0:
+                    break
+                sequence += seq
+                seq_out = [self.PAD_ID] * len(seq)
+                if not first:
+                    seq_out[0] = self.NOISE_ID
+                first = False
+                sequence_out += seq_out
+        sequence.append(self.EOS_ID)
+        sequence_out.append(self.EOS_ID)
+        return sequence, sequence_out
 
     def sequence_to_data(self, sequence, scores=None, scale=None):
         reactions = []
@@ -236,6 +381,7 @@ class ReactionTokenizer(object):
                     reactions[-1][flag].append(bbox)
                     i += 4
             i += 1
+        reactions = [r for r in reactions if len(r['reactants'] + r['conditions'] + r['products']) > 0]
         return reactions
 
 

@@ -1,0 +1,4 @@
+torch
+pycocotools==2.0.4
+pytorch-lightning==1.6.0
+transformers==4.5.1

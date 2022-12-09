@@ -29,7 +29,7 @@ class Pix2Seq(nn.Module):
             nn.GroupNorm(32, hidden_dim))
         self.backbone = backbone
 
-    def forward(self, image_tensor, targets=None):
+    def forward(self, image_tensor, targets=None, max_len=500):
         """ 
         image_tensor:
         The forward expects a NestedTensor, which consists of:
@@ -53,7 +53,7 @@ class Pix2Seq(nn.Module):
             output_logits = self.transformer(src, input_seq[:, 1:], mask, pos[-1])
             return output_logits[:, :-1]
         else:
-            output_logits = self.transformer(src, None, mask, pos[-1])
+            output_logits = self.transformer(src, None, mask, pos[-1], max_len=max_len)
             return output_logits
 
 

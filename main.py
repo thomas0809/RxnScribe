@@ -178,19 +178,21 @@ class ReactionExtractor(LightningModule):
                     stats = coco_evaluator.evaluate(predictions['bbox'])
                     scores = results = stats
                 elif 'reaction' in formats:
-                    evaluator = ReactionEvaluator()
-                    precision, recall, f1 = evaluator.evaluate(self.eval_dataset.data, predictions['reaction'])
                     epoch = self.trainer.current_epoch
+                    evaluator = ReactionEvaluator()
+                    results, *_ = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['reaction'])
+                    precision, recall, f1 = \
+                        results['overall']['precision'], results['overall']['recall'], results['overall']['f1']
+                    scores = [f1]
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
-                    scores = [precision, recall, f1]
-                    results = evaluator.evaluate_by_size(self.eval_dataset.data, predictions['reaction'])
-                    results['overall'] = {'precision': precision, 'recall': recall, 'f1': f1}
-                    self.log(f'{phase}/single', results['<=2']['f1'], rank_zero_only=True)
-                    self.log(f'{phase}/multiple', results['>2']['f1'], rank_zero_only=True)
+                    results['mol_only'], *_ = evaluator.evaluate_summarize(
+                        self.eval_dataset.data, predictions['reaction'], mol_only=True, merge_condition=True)
                 else:
                     raise NotImplementedError
                 with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
                     json.dump(results, f)
+                if phase == 'test':
+                    self.print(json.dumps(results, indent=4))
             with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
                 json.dump(predictions, f)
 
@@ -240,7 +242,7 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
         batch_preds = {}
         for format_ in self.args.formats:
             batch_preds[format_] = []
-            pred_logits = self.model(images)
+            pred_logits = self.model(images, max_len=self.tokenizer[format_].max_len)
             for i, logits in enumerate(pred_logits):
                 probs = F.softmax(logits, dim=-1)
                 scores, preds = probs.max(dim=-1)

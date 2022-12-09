@@ -8,7 +8,6 @@ import timm
 
 from reaction.inference import GreedySearch, BeamSearch
 from reaction.transformer import TransformerDecoder, Embeddings
-from reaction.tokenizer import FORMAT_INFO
 
 
 class Encoder(nn.Module):
@@ -252,7 +251,7 @@ class Decoder(nn.Module):
         predictions = {}
         beam_predictions = {}
         for format_ in self.formats:
-            max_len = FORMAT_INFO[format_]['max_len']
+            max_len = self.tokenizer[format_].max_len
             results[format_] = self.decoder[format_].decode(encoder_out, beam_size, n_best, max_length=max_len)
             outputs, scores, *_ = results[format_]
             beam_preds = [[self.tokenizer[format_].sequence_to_data(x.tolist()) for x in pred] for pred in outputs]

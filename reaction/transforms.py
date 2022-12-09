@@ -408,7 +408,7 @@ class LargeScaleJitter(object):
             target["area"] = area
             fields.append("boxes")
 
-        # remove elements for which the boxes or masks that have zero area
+        # Do not remove the boxes with zero area. Tokenizer does it instead.
         # if "boxes" in target:
         #     # favor boxes selection when defining which elements to keep
         #     # this is compatible with previous implementation

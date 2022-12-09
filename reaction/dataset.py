@@ -11,7 +11,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
-from reaction.tokenizer import FORMAT_INFO
 import reaction.transforms as T
 
 from pycocotools.coco import COCO

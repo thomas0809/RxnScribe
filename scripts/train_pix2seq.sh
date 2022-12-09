@@ -8,7 +8,7 @@ ACCUM_STEP=2
 
 DATESTR=$(date +"%m-%d-%H-%M")
 PIX2SEQ_CKPT=./ckpts/checkpoint_e299_ap370.pth
-SAVE_PATH=output/pix2seq_reaction_cv
+SAVE_PATH=output/pix2seq_reaction_nov_cv
 
 set -x
 for i in 0 1 2 3 4
@@ -29,8 +29,8 @@ NCCL_P2P_DISABLE=1 python main.py \
     --pred_eos \
     --augment --composite_augment \
     --lr 1e-4 \
-    --epochs 300 --eval_per_epoch 5 \
-    --warmup 0.05 \
+    --epochs 300 --eval_per_epoch 10 \
+    --warmup 0.02 \
     --label_smoothing 0. \
     --batch_size $((BATCH_SIZE / NUM_GPUS_PER_NODE / ACCUM_STEP)) \
     --gradient_accumulation_steps ${ACCUM_STEP} \
