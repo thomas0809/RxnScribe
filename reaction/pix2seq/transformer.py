@@ -21,7 +21,7 @@ class Transformer(nn.Module):
     def __init__(self, d_model=512, nhead=8, num_encoder_layers=6,
                  num_decoder_layers=6, dim_feedforward=1024, dropout=0.1,
                  activation="relu", normalize_before=False, num_vocal=2094,
-                 pred_eos=False):
+                 pred_eos=False, tokenizer=None):
         super().__init__()
 
         encoder_layer = TransformerEncoderLayer(
@@ -44,6 +44,7 @@ class Transformer(nn.Module):
         self.d_model = d_model
         self.nhead = nhead
         self.num_decoder_layers = num_decoder_layers
+        self.tokenizer = tokenizer
 
     def _reset_parameters(self):
         for p in self.parameters():
@@ -90,7 +91,8 @@ class Transformer(nn.Module):
             end = torch.zeros(bs).bool().to(memory.device)
             end_lens = torch.zeros(bs).long().to(memory.device)
             input_embed = self.det_embed.weight.unsqueeze(0).repeat(bs, 1, 1).transpose(0, 1)
-            pred_seq_logits = []
+            states, pred_token = [None] * bs, [None] * bs
+            pred_seq, pred_scores = [], []
             for seq_i in range(max_len):
                 hs, pre_kv = self.decoder(
                     input_embed,
@@ -98,27 +100,37 @@ class Transformer(nn.Module):
                     memory_key_padding_mask=mask,
                     pos=pos_embed,
                     pre_kv_list=pre_kv)
-                similarity = self.vocal_classifier(hs)
-                pred_seq_logits.append(similarity.transpose(0, 1))
+                # hs: N x B x D
+                logits = self.vocal_classifier(hs.transpose(0, 1))
+                log_probs = F.log_softmax(logits, dim=-1)
+                if self.tokenizer.output_constraint:
+                    states, output_masks = self.tokenizer.update_states_and_masks(states, pred_token)
+                    output_masks = torch.tensor(output_masks, device=logits.device).unsqueeze(1)
+                    log_probs.masked_fill_(output_masks, -10000)
+                if not self.pred_eos:
+                    log_probs[:, :, self.tokenizer.EOS_ID] = -10000
+
+                score, pred_token = log_probs.max(dim=-1)
+                pred_seq.append(pred_token)
+                pred_scores.append(score)
 
                 if self.pred_eos:
-                    is_eos = similarity[:, :, :self.num_vocal - 1].argmax(dim=-1)
-                    # is_eos = similarity.argmax(dim=-1)
-                    stop_state = is_eos.squeeze(0).eq(self.num_vocal - 2)
+                    stop_state = pred_token.squeeze(1).eq(self.tokenizer.EOS_ID)
                     end_lens += seq_i * (~end * stop_state)
                     end = (stop_state + end).bool()
                     if end.all() and seq_i > 4:
                         break
 
-                pred_token = similarity[:, :, :self.num_vocal - 2].argmax(dim=-1)
-                # pred_token = similarity.argmax(dim=-1)
-                input_embed = self.vocal_embed(pred_token)
+                token = log_probs[:, :, :self.num_vocal - 2].argmax(dim=-1)
+                input_embed = self.vocal_embed(token.transpose(0, 1))
 
             if not self.pred_eos:
                 end_lens = end_lens.fill_(max_len)
-            pred_seq_logits = torch.cat(pred_seq_logits, dim=1)
-            pred_seq_logits = [psl[:end_idx] for end_idx, psl in zip(end_lens, pred_seq_logits)]
-            return pred_seq_logits
+            pred_seq = torch.cat(pred_seq, dim=1)
+            pred_seq = [seq[:end_idx] for end_idx, seq in zip(end_lens, pred_seq)]
+            pred_scores = torch.cat(pred_scores, dim=1)
+            pred_scores = [scores[:end_idx] for end_idx, scores in zip(end_lens, pred_scores)]
+            return pred_seq, pred_scores
 
 
 class TransformerEncoder(nn.Module):
@@ -333,7 +345,8 @@ def _get_clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
 
 
-def build_transformer(args, num_vocal):
+def build_transformer(args, tokenizer):
+    num_vocal = len(tokenizer)
     return Transformer(
         d_model=args.hidden_dim,
         dropout=args.dropout,
@@ -344,6 +357,7 @@ def build_transformer(args, num_vocal):
         normalize_before=args.pre_norm,
         num_vocal=num_vocal,
         pred_eos=args.pred_eos,
+        tokenizer=tokenizer
     )
 
 

@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+import matplotlib.colors as colors
 import matplotlib.patches as patches
 
 
@@ -32,6 +33,10 @@ class BBox(object):
     def is_mol(self):
         return self.category_id == 1
 
+    @property
+    def is_empty(self):
+        return abs(self.x2 - self.x1) <= 0.01 or abs(self.y2 - self.y1) <= 0.01
+
     def unnormalize(self):
         return self.x1 * self.width, self.y1 * self.height, self.x2 * self.width, self.y2 * self.height
 
@@ -41,19 +46,23 @@ class BBox(object):
         return self.image_data.image[y1:y2, x1:x2]
 
     COLOR = {1: 'r', 2: 'g', 3: 'b', 4: 'y'}
+    CATEGORY = {1: 'Mol', 2: 'Txt', 3: 'Idt'}
 
     def draw(self, ax, color=None):
         x1, y1, x2, y2 = self.unnormalize()
         if color is None:
             color = self.COLOR[self.category_id]
-        rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=1, edgecolor=color, facecolor='none')
-        text = f'{self.category_id}'
-        ax.text(x1, y1, text, fontsize=10, bbox=dict(facecolor='yellow', alpha=0.5))
+        rect = patches.Rectangle(
+            (x1, y1), x2-x1, y2-y1, linewidth=1, edgecolor=color, facecolor=colors.to_rgba(color, 0.2))
+        text = f'{self.CATEGORY[self.category_id]}'
+        ax.text(x1, y1, text, fontsize=10, bbox=dict(linewidth=0, facecolor='yellow', alpha=0.5))
         ax.add_patch(rect)
         return
 
-    def set_smiles(self, smiles):
+    def set_smiles(self, smiles, molfile=None):
         self.data['smiles'] = smiles
+        if molfile:
+            self.data['molfile'] = molfile
 
     def to_json(self):
         return self.data
@@ -91,13 +100,45 @@ class Reaction(object):
             'products': [self.bboxes[i].to_json() for i in self.products]
         }
 
+    def _deduplicate_bboxes(self, indices):
+        results = []
+        for i, idx_i in enumerate(indices):
+            duplicate = False
+            for j, idx_j in enumerate(indices[:i]):
+                if get_iou(self.bboxes[idx_i], self.bboxes[idx_j]) > 0.6:
+                    duplicate = True
+                    break
+            if not duplicate:
+                results.append(idx_i)
+        return results
+
+    def deduplicate(self):
+        flags = [False] * len(self.bboxes)
+        bbox_list = self.reactants + self.products + self.conditions
+        for i, idx_i in enumerate(bbox_list):
+            if self.bboxes[idx_i].is_empty:
+                flags[idx_i] = True
+                continue
+            for idx_j in bbox_list[:i]:
+                if flags[idx_j] is False and get_iou(self.bboxes[idx_i], self.bboxes[idx_j]) > 0.6:
+                    flags[idx_i] = True
+                    break
+        self.reactants = [i for i in self.reactants if not flags[i]]
+        self.conditions = [i for i in self.conditions if not flags[i]]
+        self.products = [i for i in self.products if not flags[i]]
+
     def schema(self, mol_only=False):
         # Return reactants, conditions, and products. If mol_only is True, only include bboxes that are mol structures.
         if mol_only:
-            return [
-                [idx for idx in indices if self.bboxes[idx].is_mol]
-                for indices in [self.reactants, self.conditions, self.products]
-            ]
+            reactants, conditions, products = [[idx for idx in indices if self.bboxes[idx].is_mol]
+                                               for indices in [self.reactants, self.conditions, self.products]]
+            # It would be unfair to compare two reactions if their reactants or products are empty after filtering.
+            # Setting them to the original ones in this case.
+            if len(reactants) == 0:
+                reactants = self.reactants
+            if len(products) == 0:
+                products = self.products
+            return reactants, conditions, products
         else:
             return self.reactants, self.conditions, self.products
 
@@ -112,7 +153,7 @@ class Reaction(object):
         if len(reactants1) + len(conditions1) + len(products1) != len(reactants2) + len(conditions2) + len(products2):
             return False
         # Match use original index
-        match1, match2, scores = get_bboxes_match(self.bboxes, other.bboxes)
+        match1, match2, scores = get_bboxes_match(self.bboxes, other.bboxes, iou_thres=0.5)
         m_reactants, m_conditions, m_products = [[match1[i] for i in x] for x in [reactants1, conditions1, products1]]
         if any([m == -1 for m in m_reactants + m_conditions + m_products]):
             return False
@@ -139,27 +180,71 @@ class Reaction(object):
         return
 
 
+class ReactionSet(object):
+
+    def __init__(self, reactions, bboxes=None, image_data=None):
+        self.reactions = [Reaction(reaction, bboxes, image_data) for reaction in reactions]
+
+    def __len__(self):
+        return len(self.reactions)
+
+    def __iter__(self):
+        return iter(self.reactions)
+
+    def __getitem__(self, item):
+        return self.reactions[item]
+
+    def deduplicate(self):
+        results = []
+        for reaction in self.reactions:
+            if any(r == reaction for r in results):
+                continue
+            if len(reaction.reactants) < 1 or len(reaction.products) < 1:
+                continue
+            results.append(reaction)
+        self.reactions = results
+
+    def to_json(self):
+        return [r.to_json() for r in self.reactions]
+
+
 class ImageData(object):
 
-    def __init__(self, image_data, predictions=None, load_image=False, image_path=None):
-        self.file_name = image_data['file_name']
-        self.width = image_data['width']
-        self.height = image_data['height']
-        if load_image:
-            assert image_path is not None
-            self.image = cv2.imread(os.path.join(image_path, self.file_name))
-        if 'bboxes' in image_data:
-            self.gold_bboxes = [BBox(bbox, self, xyxy=False, normalized=False) for bbox in image_data['bboxes']]
-        else:
-            self.gold_bboxes = []
-        self.reaction = ('reactions' in image_data)
-        if self.reaction:
-            self.gold_reactions = [Reaction(reaction, self.gold_bboxes) for reaction in image_data['reactions']]
+    def __init__(self, data=None, predictions=None, image_file=None):
+        if data:
+            self.file_name = data['file_name']
+            self.width = data['width']
+            self.height = data['height']
+        if image_file:
+            self.image = cv2.imread(image_file)
+            self.height, self.width, _ = self.image.shape
+        if data and 'bboxes' in data:
+            self.gold_bboxes = [BBox(bbox, self, xyxy=False, normalized=False) for bbox in data['bboxes']]
         if predictions is not None:
-            if self.reaction:
-                self.pred_reactions = [Reaction(reaction, image_data=self) for reaction in predictions]
-            else:
-                self.pred_bboxes = [BBox(bbox, self, xyxy=True, normalized=True) for bbox in predictions]
+            self.pred_bboxes = [BBox(bbox, self, xyxy=True, normalized=True) for bbox in predictions]
+
+    def draw_gold(self, ax, image=None):
+        if image is not None:
+            ax.imshow(image)
+        for b in self.gold_bboxes:
+            b.draw(ax)
+
+    def draw_prediction(self, ax, image=None):
+        if image is not None:
+            ax.imshow(image)
+        for b in self.pred_bboxes:
+            b.draw(ax)
+
+
+class ReactionImageData(ImageData):
+
+    def __init__(self, data=None, predictions=None, image_file=None):
+        super().__init__(data=data, image_file=image_file)
+        if data and 'reactions' in data:
+            self.gold_reactions = ReactionSet(data['reactions'], self.gold_bboxes, image_data=self)
+        if predictions is not None:
+            self.pred_reactions = ReactionSet(predictions, image_data=self)
+            self.pred_reactions.deduplicate()
 
     def evaluate(self, mol_only=False, merge_condition=False, debug=False):
         gold_total = len(self.gold_reactions)
@@ -178,24 +263,14 @@ class ImageData(object):
     def draw_gold(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
-        if self.reaction:
-            for r in self.gold_reactions:
-                r.draw(ax)
-        else:
-            for b in self.gold_bboxes:
-                b.draw(ax)
-        return
+        for r in self.gold_reactions:
+            r.draw(ax)
 
     def draw_prediction(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
-        if self.reaction:
-            for r in self.pred_reactions:
-                r.draw(ax)
-        else:
-            for b in self.pred_bboxes:
-                b.draw(ax)
-        return
+        for r in self.pred_reactions:
+            r.draw(ax)
 
 
 def get_iou(bb1, bb2):
@@ -253,3 +328,31 @@ def get_bboxes_match(bboxes1, bboxes2, iou_thres=0.5, match_category=False):
         if scores[match2[j], j] < iou_thres:
             match2[j] = -1
     return match1, match2, scores
+
+
+def deduplicate_reactions(reactions):
+    pred_reactions = ReactionSet(reactions)
+    for r in pred_reactions:
+        r.deduplicate()
+    pred_reactions.deduplicate()
+    return pred_reactions.to_json()
+
+
+def postprocess_reactions(reactions, image_file=None, molscribe=None):
+    image_data = ReactionImageData(predictions=reactions, image_file=image_file)
+    pred_reactions = image_data.pred_reactions
+    for r in pred_reactions:
+        r.deduplicate()
+    pred_reactions.deduplicate()
+    if molscribe:
+        bbox_images, bbox_indices = [], []
+        for i, reaction in enumerate(pred_reactions):
+            for j, bbox in enumerate(reaction.bboxes):
+                if bbox.is_mol:
+                    bbox_images.append(bbox.image())
+                    bbox_indices.append((i, j))
+        if len(bbox_images) > 0:
+            smiles_list, molfile_list = molscribe.predict_images(bbox_images, batch_size=64)
+            for (i, j), smiles, molfile in zip(bbox_indices, smiles_list, molfile_list):
+                pred_reactions[i].bboxes[j].set_smiles(smiles, molfile)
+    return pred_reactions.to_json()

@@ -37,7 +37,7 @@ class ReactionDataset(Dataset):
             self.data = [{'file_name': file} for file in image_files]
         self.image_path = args.image_path
         self.split = split
-        self.formats = args.formats
+        self.format = args.format
         self.is_train = (split == 'train')
         self.transform = make_transforms(split, args.augment, debug)
         # self.reaction_transform = T.RandomReactionCrop()
@@ -47,7 +47,7 @@ class ReactionDataset(Dataset):
 
     @property
     def pad_id(self):
-        return self.tokenizer[self.args.formats[0]].PAD_ID
+        return self.tokenizer[self.format].PAD_ID
 
     def generate_sample(self, image, target):
         ref = {}
@@ -55,16 +55,18 @@ class ReactionDataset(Dataset):
         image, target = self.transform(image, target)
         ref['scale'] = target['scale']
         if self.is_train:
-            if 'reaction' in self.formats:
+            args = self.args
+            if self.format == 'reaction':
                 max_len = self.tokenizer['reaction'].max_len
                 label, label_out = self.tokenizer['reaction'].data_to_sequence(
-                    target, rand_target=self.args.rand_target, add_noise=self.args.add_noise)
+                    target, rand_order=args.rand_order, shuffle_bbox=args.shuffle_bbox, add_noise=args.add_noise,
+                    mix_noise=args.mix_noise)
                 ref['reaction'] = torch.LongTensor(label[:max_len])
                 ref['reaction_out'] = torch.LongTensor(label_out[:max_len])
-            if 'bbox' in self.formats:
+            if self.format == 'bbox':
                 max_len = self.tokenizer['bbox'].max_len
                 label, label_out = self.tokenizer['bbox'].data_to_sequence(
-                    target, rand_target=self.args.rand_target, add_noise=self.args.add_noise)
+                    target, rand_order=args.rand_order, add_noise=args.add_noise)
                 ref['bbox'] = torch.LongTensor(label[:max_len])
                 ref['bbox_out'] = torch.LongTensor(label_out[:max_len])
         return image, ref
@@ -89,6 +91,7 @@ class ReactionDataset(Dataset):
             return [[idx, image1, ref1], [idx, image2, ref2]]
         else:
             image, ref = self.generate_sample(image, target)
+            ref['file_name'] = self.data[idx]['file_name']
             return [[idx, image, ref]]
 
     def load_and_prepare(self, idx):
@@ -215,7 +218,6 @@ def pad_images(imgs):
 
 
 def get_collate_fn(pad_id):
-
     def rxn_collate(batch):
         ids = []
         imgs = []

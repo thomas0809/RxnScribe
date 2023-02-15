@@ -7,13 +7,14 @@ import random
 import argparse
 import datetime
 import numpy as np
+import functools
 
 import torch
 import torch.distributed as dist
-import torch.nn.functional as F
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, LightningDataModule
 from pytorch_lightning.callbacks import LearningRateMonitor
+from pytorch_lightning.strategies.ddp import DDPStrategy
 from transformers import get_scheduler
 
 from reaction.model import Encoder, Decoder
@@ -21,6 +22,7 @@ from reaction.pix2seq import build_pix2seq_model
 from reaction.loss import Criterion
 from reaction.tokenizer import get_tokenizer
 from reaction.dataset import ReactionDataset, get_collate_fn
+from reaction.data import postprocess_reactions
 from reaction.evaluate import CocoEvaluator, ReactionEvaluator
 import reaction.utils as utils
 
@@ -61,7 +63,6 @@ def get_args(notebook=False):
     parser.add_argument('--pix2seq', action='store_true', help="specify the model from playground")
     parser.add_argument('--pix2seq_ckpt', type=str, default=None)
     parser.add_argument('--large_scale_jitter', action='store_true', help='large scale jitter')
-    parser.add_argument('--rand_target', action='store_true', help="randomly permute the sequence of input targets")
     parser.add_argument('--pred_eos', action='store_true', help='use eos token instead of predicting 100 objects')
     # * Backbone
     parser.add_argument('--backbone', default='resnet50', type=str, help="Name of the convolutional backbone to use")
@@ -87,14 +88,17 @@ def get_args(notebook=False):
     parser.add_argument('--valid_file', type=str, default=None)
     parser.add_argument('--test_file', type=str, default=None)
     parser.add_argument('--vocab_file', type=str, default=None)
-    parser.add_argument('--formats', type=str, default='reaction')
+    parser.add_argument('--format', type=str, default='reaction')
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--input_size', type=int, default=224)
     parser.add_argument('--augment', action='store_true')
     parser.add_argument('--composite_augment', action='store_true')
     parser.add_argument('--coord_bins', type=int, default=100)
     parser.add_argument('--sep_xy', action='store_true')
+    parser.add_argument('--rand_order', action='store_true', help="randomly permute the sequence of input targets")
     parser.add_argument('--add_noise', action='store_true')
+    parser.add_argument('--mix_noise', action='store_true')
+    parser.add_argument('--shuffle_bbox', action='store_true')
     parser.add_argument('--images', type=str, default='')
     # Training
     parser.add_argument('--epochs', type=int, default=8)
@@ -119,10 +123,9 @@ def get_args(notebook=False):
     # Inference
     parser.add_argument('--beam_size', type=int, default=1)
     parser.add_argument('--n_best', type=int, default=1)
+    parser.add_argument('--molscribe', action='store_true')
     args = parser.parse_args([]) if notebook else parser.parse_args()
 
-    args.formats = args.formats.split(',')
-    assert len(args.formats) == 1
     args.images = args.images.split(',')
 
     return args
@@ -165,7 +168,7 @@ class ReactionExtractor(LightningModule):
         else:
             gathered_outputs = outputs
 
-        formats = self.args.formats
+        format = self.args.format
         predictions = utils.merge_predictions(gathered_outputs)
 
         name = self.eval_dataset.name
@@ -173,11 +176,11 @@ class ReactionExtractor(LightningModule):
 
         if self.trainer.is_global_zero:
             if not self.args.no_eval:
-                if 'bbox' in formats:
+                if format == 'bbox':
                     coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
                     stats = coco_evaluator.evaluate(predictions['bbox'])
-                    scores = results = stats
-                elif 'reaction' in formats:
+                    scores = results = list(stats)
+                elif format == 'reaction':
                     epoch = self.trainer.current_epoch
                     evaluator = ReactionEvaluator()
                     results, *_ = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['reaction'])
@@ -224,13 +227,23 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
         super(ReactionExtractor, self).__init__()
         self.args = args
         self.tokenizer = tokenizer
-        self.model = build_pix2seq_model(args)
+        self.format = args.format
+        self.model = build_pix2seq_model(args, tokenizer[self.format])
         self.criterion = Criterion(args, tokenizer)
+        self.molscribe = None
+
+    def get_molscribe(self):
+        if self.args.molscribe and self.molscribe is None:
+            from molscribe import MolScribe
+            from huggingface_hub import hf_hub_download
+            ckpt_path = hf_hub_download("yujieq/MolScribe", "swin_base_char_aux_1m.pth")
+            self.molscribe = MolScribe(ckpt_path, device=self.device)
+        return self.molscribe
 
     def training_step(self, batch, batch_idx):
         indices, images, refs = batch
-        results = {format_: (self.model(images, refs[format_]), refs[format_+'_out'][0][:, 1:])
-                   for format_ in self.args.formats}
+        format = self.format
+        results = {format: (self.model(images, refs[format]), refs[format+'_out'][0][:, 1:])}
         losses = self.criterion(results, refs)
         loss = sum(losses.values())
         self.log('train/loss', loss)
@@ -239,15 +252,19 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
 
     def validation_step(self, batch, batch_idx):
         indices, images, refs = batch
-        batch_preds = {}
-        for format_ in self.args.formats:
-            batch_preds[format_] = []
-            pred_logits = self.model(images, max_len=self.tokenizer[format_].max_len)
-            for i, logits in enumerate(pred_logits):
-                probs = F.softmax(logits, dim=-1)
-                scores, preds = probs.max(dim=-1)
-                batch_preds[format_].append(
-                    self.tokenizer[format_].sequence_to_data(preds.tolist(), scores.tolist(), scale=refs['scale'][i]))
+        format = self.format
+        batch_preds = {format: [], 'file_name': []}
+        pred_seqs, pred_scores = self.model(images, max_len=self.tokenizer[format].max_len)
+        for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
+            if format == 'reaction':
+                reactions = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
+                image_file = os.path.join(self.args.image_path, refs['file_name'][i])
+                reactions = postprocess_reactions(reactions, image_file=image_file, molscribe=self.get_molscribe())
+                batch_preds[format].append(reactions)
+            if format == 'bbox':
+                bboxes = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
+                batch_preds[format].append(bboxes)
+            batch_preds['file_name'].append(refs['file_name'][i])
         return indices, batch_preds
     #
     # def predict(self, images):
@@ -268,7 +285,7 @@ class ReactionDataModule(LightningDataModule):
 
     @property
     def pad_id(self):
-        return self.tokenizer[self.args.formats[0]].PAD_ID
+        return self.tokenizer[self.args.format].PAD_ID
 
     def prepare_data(self):
         args = self.args
@@ -336,8 +353,9 @@ def main():
     logger = pl.loggers.TensorBoardLogger(args.save_path, name='', version='')
 
     trainer = pl.Trainer(
-        strategy="ddp",
-        gpus=args.gpus,
+        strategy=DDPStrategy(find_unused_parameters=False),
+        accelerator='gpu',
+        devices=4,
         logger=logger,
         default_root_dir=args.save_path,
         callbacks=[checkpoint, lr_monitor],

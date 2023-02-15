@@ -13,31 +13,36 @@ def get_args():
     return args
 
 
+def print_scores(scores):
+    for key, val in scores.items():
+        print(f'{key:<10} precision: {val["precision"]:.3f}  recall: {val["recall"]:.3f}  f1: {val["f1"]:.3f}')
+    print()
+
+
 if __name__ == "__main__":
     args = get_args()
     gold_images = []
     pred_images = []
-    for split in range(5):
+    for split in range(args.num_splits):
         data_path = os.path.join(args.data_path, f'test{split}.json')
         pred_path = os.path.join(args.pred_path, f'{split}/prediction_test{split}.json')
         with open(data_path) as f:
             data = json.load(f)
         with open(pred_path) as f:
             predictions = json.load(f)
-        gold_images += data['images']
-        pred_images += predictions['reaction']
+        max_len = max(len(data['images']), len(predictions['reaction']))
+        gold_images += data['images'][:max_len]
+        pred_images += predictions['reaction'][:max_len]
 
     evaluator = ReactionEvaluator()
-    scores, summarize, group_stats = evaluator.evaluate_summarize(gold_images, pred_images)
-    print(json.dumps(scores, indent=4))
-    for key1 in ['overall', 'single', 'multiple']:
-        for key2 in ['precision', 'recall', 'f1']:
-            print("%.3f" % scores[key1][key2], end=' ')
-    print()
-    scores, summarize, group_stats = evaluator.evaluate_summarize(gold_images, pred_images,
-                                                                  mol_only=True, merge_condition=True)
-    print(json.dumps(scores, indent=4))
-    for key1 in ['overall', 'single', 'multiple']:
-        for key2 in ['precision', 'recall', 'f1']:
-            print("%.3f" % scores[key1][key2], end=' ')
-    print()
+    print('Exact match')
+    scores, summarize, size_stats = evaluator.evaluate_summarize(gold_images, pred_images)
+    print_scores(scores)
+    scores, group_stats = evaluator.evaluate_by_group(gold_images, pred_images)
+    print_scores(scores)
+    print('Soft match')
+    scores, summarize, size_stats = evaluator.evaluate_summarize(gold_images, pred_images,
+                                                                 mol_only=True, merge_condition=True)
+    print_scores(scores)
+    scores, group_stats = evaluator.evaluate_by_group(gold_images, pred_images, mol_only=True, merge_condition=True)
+    print_scores(scores)

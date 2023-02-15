@@ -22,7 +22,7 @@ NCCL_P2P_DISABLE=1 python main.py \
     --train_file train${i}.json \
     --valid_file dev${i}.json \
     --test_file test${i}.json \
-    --formats reaction \
+    --format reaction \
     --input_size 1333 \
     --pix2seq \
     --pix2seq_ckpt ${PIX2SEQ_CKPT} \
@@ -34,6 +34,6 @@ NCCL_P2P_DISABLE=1 python main.py \
     --label_smoothing 0. \
     --batch_size $((BATCH_SIZE / NUM_GPUS_PER_NODE / ACCUM_STEP)) \
     --gradient_accumulation_steps ${ACCUM_STEP} \
-    --do_train --do_valid --do_test \
+    --do_test --molscribe \
     --gpus $NUM_GPUS_PER_NODE  #  2>&1  | tee $SAVE_PATH/log_${DATESTR}.txt
 done

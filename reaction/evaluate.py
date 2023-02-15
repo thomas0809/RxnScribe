@@ -7,7 +7,7 @@ import torch
 from pycocotools.cocoeval import COCOeval
 from pycocotools.coco import COCO
 
-from .data import ImageData
+from .data import ImageData, ReactionImageData
 
 
 class CocoEvaluator(object):
@@ -66,10 +66,13 @@ def convert_to_xywh(box, width, height):
     return [xmin * width, ymin * height, (xmax - xmin) * width, (ymax - ymin) * height]
 
 
+EMPTY_STATS = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
+
+
 class ReactionEvaluator(object):
 
     def evaluate_image(self, gold_image, pred_image, **kwargs):
-        data = ImageData(gold_image, pred_image)
+        data = ReactionImageData(gold_image, pred_image)
         return data.evaluate(**kwargs)
 
     def compute_metrics(self, gold_hits, gold_total, pred_hits, pred_total):
@@ -94,7 +97,7 @@ class ReactionEvaluator(object):
             gh, ph = self.evaluate_image(gold_image, pred_image, **kwargs)
             gtotal = len(gh)
             if gtotal not in group_stats:
-                group_stats[gtotal] = {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
+                group_stats[gtotal] = copy.deepcopy(EMPTY_STATS)
             group_stats[gtotal]['gold_hits'] += sum(gh)
             group_stats[gtotal]['gold_total'] += len(gh)
             group_stats[gtotal]['pred_hits'] += sum(ph)
@@ -106,20 +109,38 @@ class ReactionEvaluator(object):
                 stats['gold_hits'], stats['gold_total'], stats['pred_hits'], stats['pred_total'])
         return group_scores, group_stats
 
-    def evaluate_summarize(self, groundtruths, predictions, **kwargs):
-        group_scores, group_stats = self.evaluate_by_size(groundtruths, predictions, **kwargs)
-        summarize = {
-            'overall': {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0},
-            'single': {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0},
-            'multiple': {'gold_hits': 0, 'gold_total': 0, 'pred_hits': 0, 'pred_total': 0, 'image': 0}
-        }
+    def evaluate_by_group(self, groundtruths, predictions, **kwargs):
+        group_stats = {}
+        for gold_image, pred_image in zip(groundtruths, predictions):
+            gh, ph = self.evaluate_image(gold_image, pred_image, **kwargs)
+            diagram_type = gold_image['diagram_type']
+            if diagram_type not in group_stats:
+                group_stats[diagram_type] = copy.deepcopy(EMPTY_STATS)
+            group_stats[diagram_type]['gold_hits'] += sum(gh)
+            group_stats[diagram_type]['gold_total'] += len(gh)
+            group_stats[diagram_type]['pred_hits'] += sum(ph)
+            group_stats[diagram_type]['pred_total'] += len(ph)
+            group_stats[diagram_type]['image'] += 1
+        group_scores = {}
         for group, stats in group_stats.items():
-            if type(group) is int:
-                output = summarize['single'] if group <= 1 else summarize['multiple']
+            group_scores[group] = self.compute_metrics(
+                stats['gold_hits'], stats['gold_total'], stats['pred_hits'], stats['pred_total'])
+        return group_scores, group_stats
+
+    def evaluate_summarize(self, groundtruths, predictions, **kwargs):
+        size_scores, size_stats = self.evaluate_by_size(groundtruths, predictions, **kwargs)
+        summarize = {
+            'overall': copy.deepcopy(EMPTY_STATS),
+            # 'single': copy.deepcopy(EMPTY_STATS),
+            # 'multiple': copy.deepcopy(EMPTY_STATS)
+        }
+        for size, stats in size_stats.items():
+            if type(size) is int:
+                # output = summarize['single'] if size <= 1 else summarize['multiple']
                 for key in stats:
-                    output[key] += stats[key]
+                    # output[key] += stats[key]
                     summarize['overall'][key] += stats[key]
         scores = {}
         for key, val in summarize.items():
             scores[key] = self.compute_metrics(val['gold_hits'], val['gold_total'], val['pred_hits'], val['pred_total'])
-        return scores, summarize, group_stats
+        return scores, summarize, size_stats

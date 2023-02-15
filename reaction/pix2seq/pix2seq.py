@@ -53,11 +53,11 @@ class Pix2Seq(nn.Module):
             output_logits = self.transformer(src, input_seq[:, 1:], mask, pos[-1])
             return output_logits[:, :-1]
         else:
-            output_logits = self.transformer(src, None, mask, pos[-1], max_len=max_len)
-            return output_logits
+            output_seqs, output_scores = self.transformer(src, None, mask, pos[-1], max_len=max_len)
+            return output_seqs, output_scores
 
 
-def build(args):
+def build_pix2seq_model(args, tokenizer):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -68,13 +68,7 @@ def build(args):
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
 
     backbone = build_backbone(args)
-
-    num_bins = 2000
-    # 0 - num_bin coordinate, num_bin+1 - num_bin+num_class class,
-    # num_bin+num_class+1 end, num_bin+num_class+2 noise
-    num_vocal = num_bins + 1 + 91 + 2
-
-    transformer = build_transformer(args, num_vocal)
+    transformer = build_transformer(args, tokenizer)
 
     model = Pix2Seq(backbone, transformer)
 

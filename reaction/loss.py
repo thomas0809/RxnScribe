@@ -73,9 +73,9 @@ class Criterion(nn.Module):
     def __init__(self, args, tokenizer):
         super(Criterion, self).__init__()
         criterion = {}
-        for format_ in args.formats:
-            tn = tokenizer[format_]
-            criterion[format_] = SequenceLoss(args.label_smoothing, len(tn), ignore_index=tn.PAD_ID)
+        format = args.format
+        tn = tokenizer[format]
+        criterion[format] = SequenceLoss(args.label_smoothing, len(tn), ignore_index=tn.PAD_ID)
         self.criterion = nn.ModuleDict(criterion)
 
     def forward(self, results, refs):
