@@ -1,7 +1,0 @@
-from .elsevier import ElsevierTemplate
-from .royal_society_of_chemistry import RoyalSocietyChemistryTemplate
-from .american_chemical_society import AmericanChemicalSocietyTemplate
-from .angewandte import AngewandteTemplate
-from .advanced_materials_family import AdvancedMaterialsFamilyTemplate
-from .chemistry_a_european_journal import ChemistryEuropeanJournalTemplate
-from .methods import Methods

@@ -334,7 +334,7 @@ def deduplicate_reactions(reactions):
     return pred_reactions.to_json()
 
 
-def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None, ocr=None):
+def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None, ocr=None, batch_size=32):
     image_data = ReactionImageData(predictions=reactions, image_file=image_file, image=image)
     pred_reactions = image_data.pred_reactions
     for r in pred_reactions:
@@ -348,7 +348,7 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     bbox_images.append(bbox.image())
                     bbox_indices.append((i, j))
         if len(bbox_images) > 0:
-            smiles_list, molfile_list = molscribe.predict_images(bbox_images, batch_size=64)
+            smiles_list, molfile_list = molscribe.predict_images(bbox_images, batch_size=batch_size)
             for (i, j), smiles, molfile in zip(bbox_indices, smiles_list, molfile_list):
                 pred_reactions[i].bboxes[j].set_smiles(smiles, molfile)
     if ocr:
