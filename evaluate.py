@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-from reaction.evaluate import ReactionEvaluator
+from rxnscribe.evaluate import ReactionEvaluator
 
 
 def get_args():

@@ -64,6 +64,9 @@ class BBox(object):
         if molfile:
             self.data['molfile'] = molfile
 
+    def set_text(self, text):
+        self.data['text'] = text
+
     def to_json(self):
         return self.data
 
@@ -210,13 +213,18 @@ class ReactionSet(object):
 
 class ImageData(object):
 
-    def __init__(self, data=None, predictions=None, image_file=None):
+    def __init__(self, data=None, predictions=None, image_file=None, image=None):
         if data:
             self.file_name = data['file_name']
             self.width = data['width']
             self.height = data['height']
         if image_file:
             self.image = cv2.imread(image_file)
+            self.height, self.width, _ = self.image.shape
+        if image:
+            if not isinstance(image, np.ndarray):
+                image = np.asarray(image)
+            self.image = image
             self.height, self.width, _ = self.image.shape
         if data and 'bboxes' in data:
             self.gold_bboxes = [BBox(bbox, self, xyxy=False, normalized=False) for bbox in data['bboxes']]
@@ -238,8 +246,8 @@ class ImageData(object):
 
 class ReactionImageData(ImageData):
 
-    def __init__(self, data=None, predictions=None, image_file=None):
-        super().__init__(data=data, image_file=image_file)
+    def __init__(self, data=None, predictions=None, image_file=None, image=None):
+        super().__init__(data=data, image_file=image_file, image=image)
         if data and 'reactions' in data:
             self.gold_reactions = ReactionSet(data['reactions'], self.gold_bboxes, image_data=self)
         if predictions is not None:
@@ -259,18 +267,6 @@ class ReactionImageData(ImageData):
                     gold_hit[i] = True
                     pred_hit[j] = True
         return gold_hit, pred_hit
-
-    def draw_gold(self, ax, image=None):
-        if image is not None:
-            ax.imshow(image)
-        for r in self.gold_reactions:
-            r.draw(ax)
-
-    def draw_prediction(self, ax, image=None):
-        if image is not None:
-            ax.imshow(image)
-        for r in self.pred_reactions:
-            r.draw(ax)
 
 
 def get_iou(bb1, bb2):
@@ -338,8 +334,8 @@ def deduplicate_reactions(reactions):
     return pred_reactions.to_json()
 
 
-def postprocess_reactions(reactions, image_file=None, molscribe=None):
-    image_data = ReactionImageData(predictions=reactions, image_file=image_file)
+def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None, ocr=None):
+    image_data = ReactionImageData(predictions=reactions, image_file=image_file, image=image)
     pred_reactions = image_data.pred_reactions
     for r in pred_reactions:
         r.deduplicate()
@@ -355,4 +351,10 @@ def postprocess_reactions(reactions, image_file=None, molscribe=None):
             smiles_list, molfile_list = molscribe.predict_images(bbox_images, batch_size=64)
             for (i, j), smiles, molfile in zip(bbox_indices, smiles_list, molfile_list):
                 pred_reactions[i].bboxes[j].set_smiles(smiles, molfile)
+    if ocr:
+        for reaction in pred_reactions:
+            for bbox in reaction.bboxes:
+                if not bbox.is_mol:
+                    text = ocr.readtext(bbox.image(), detail=0)
+                    bbox.set_text(text)
     return pred_reactions.to_json()

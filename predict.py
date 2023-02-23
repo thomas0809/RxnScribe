@@ -5,46 +5,18 @@ import json
 import random
 import argparse
 import numpy as np
-
 import torch
-import torch.distributed as dist
-import torch.nn.functional as F
-import pytorch_lightning as pl
-from pytorch_lightning import LightningModule
 
-from reaction.pix2seq import build_pix2seq_model
-from reaction.tokenizer import get_tokenizer
-from reaction.dataset import ReactionDataset, get_collate_fn
-import reaction.utils as utils
-from main import ReactionExtractorPix2Seq, get_args
-
-
-def predict_images(trainer, model, dataset, batch_size=8):
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, num_workers=1, collate_fn=get_collate_fn(dataset.pad_id))
-    results = trainer.predict(model, dataloader)
-    predictions = utils.merge_predictions(results)
-    return predictions
-
+from rxnscribe import RxnScribe
 
 def main():
 
-    args = get_args()
+    model_path = 'output/pix2seq_reaction_nov_cv_ep600_3e-4/0/checkpoints/best.ckpt'
+    image_file = 'assets/acs.joc.5b01703-Scheme-c1.png'
+    device = torch.device('cuda')
+    model = RxnScribe(model_path, device)
 
-    args.pix2seq = True
-    tokenizer = get_tokenizer(args)
-
-    dataset = ReactionDataset(args, tokenizer, image_files=args.images, split='test')
-
-    model = ReactionExtractorPix2Seq.load_from_checkpoint(
-        os.path.join(args.save_path, 'checkpoints/best.ckpt'), strict=False, args=args, tokenizer=tokenizer)
-
-    trainer = pl.Trainer(
-        gpus=1,
-        default_root_dir='tmp',
-        deterministic=True)
-
-    print(predict_images(trainer, model, dataset))
+    print(model.predict_image_file(image_file, molscribe=True, ocr=True))
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ import torch.nn.functional as F
 
 import timm
 
-from reaction.inference import GreedySearch, BeamSearch
-from reaction.transformer import TransformerDecoder, Embeddings
+from .inference import GreedySearch, BeamSearch
+from .transformer import TransformerDecoder, Embeddings
 
 
 class Encoder(nn.Module):

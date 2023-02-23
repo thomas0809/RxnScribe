@@ -1,13 +1,9 @@
 import os
-import sys
-import time
 import math
 import json
 import random
 import argparse
-import datetime
 import numpy as np
-import functools
 
 import torch
 import torch.distributed as dist
@@ -17,14 +13,14 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.strategies.ddp import DDPStrategy
 from transformers import get_scheduler
 
-from reaction.model import Encoder, Decoder
-from reaction.pix2seq import build_pix2seq_model
-from reaction.loss import Criterion
-from reaction.tokenizer import get_tokenizer
-from reaction.dataset import ReactionDataset, get_collate_fn
-from reaction.data import postprocess_reactions
-from reaction.evaluate import CocoEvaluator, ReactionEvaluator
-import reaction.utils as utils
+from rxnscribe.model import Encoder, Decoder
+from rxnscribe.pix2seq import build_pix2seq_model
+from rxnscribe.loss import Criterion
+from rxnscribe.tokenizer import get_tokenizer
+from rxnscribe.dataset import ReactionDataset, get_collate_fn
+from rxnscribe.data import postprocess_reactions
+from rxnscribe.evaluate import CocoEvaluator, ReactionEvaluator
+import rxnscribe.utils as utils
 
 
 def get_args(notebook=False):
@@ -266,13 +262,6 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
                 batch_preds[format].append(bboxes)
             batch_preds['file_name'].append(refs['file_name'][i])
         return indices, batch_preds
-    #
-    # def predict(self, images):
-    #     # images: a list of PIL images
-    #     batch = [[(i,) + self.predict_dataset.generate_sample(image, {})] for i, image in enumerate(images)]
-    #     batch = self.predict_collate_fn(batch)
-    #     _, predictions = self.validation_step(batch, [])
-    #     return predictions
 
 
 class ReactionDataModule(LightningDataModule):
