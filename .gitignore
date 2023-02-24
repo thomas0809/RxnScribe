@@ -1,1 +1,2 @@
 scripts/*.sh
+**/__pycache__

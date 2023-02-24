@@ -127,9 +127,10 @@ class RxnScribe:
         results = []
         assert image or image_file
         data = ReactionImageData(predictions=predictions, image=image, image_file=image_file)
+        h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
         for r in data.pred_reactions:
-            fig, ax = plt.subplots(figsize=(10, 10))
-            fig.tight_layout(pad=0)
+            fig, ax = plt.subplots(figsize=(w, h))
+            fig.tight_layout()
             canvas = FigureCanvasAgg(fig)
             ax.imshow(data.image)
             ax.axis('off')
