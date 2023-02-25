@@ -140,3 +140,26 @@ class RxnScribe:
             results.append(np.asarray(buf))
             plt.close(fig)
         return results
+
+    def draw_predictions_combined(self, predictions, image=None, image_file=None):
+        assert image or image_file
+        data = ReactionImageData(predictions=predictions, image=image, image_file=image_file)
+        h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
+        n = len(data.pred_reactions)
+        fig, axes = plt.subplots(n, 1, figsize=(w, h * n))
+        if n == 1:
+            axes = [axes]
+        fig.tight_layout(rect=(0.02, 0.02, 0.99, 0.99))
+        canvas = FigureCanvasAgg(fig)
+        for i, r in enumerate(data.pred_reactions):
+            ax = axes[i]
+            ax.imshow(data.image)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(f'reaction # {i}', fontdict={'fontweight': 'bold', 'fontsize': 14})
+            r.draw(ax)
+        canvas.draw()
+        buf = canvas.buffer_rgba()
+        result_image = np.asarray(buf)
+        plt.close(fig)
+        return result_image
