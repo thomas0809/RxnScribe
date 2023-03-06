@@ -6,9 +6,8 @@ NUM_GPUS_PER_NODE=4
 BATCH_SIZE=32
 ACCUM_STEP=2
 
-DATESTR=$(date +"%m-%d-%H-%M")
 PIX2SEQ_CKPT=./ckpts/checkpoint_e299_ap370.pth
-SAVE_PATH=output/pix2seq_reaction_nov_cv_ep600_4e-4
+SAVE_PATH=output/pix2seq_reaction_cv_ep600_3e-4
 
 set -x
 for i in 0 1 2 3 4
@@ -28,12 +27,12 @@ NCCL_P2P_DISABLE=1 python main.py \
     --pix2seq_ckpt ${PIX2SEQ_CKPT} \
     --pred_eos \
     --augment --composite_augment \
-    --lr 4e-4 \
+    --lr 3e-4 \
     --epochs 600 --eval_per_epoch 30 \
     --warmup 0.02 \
     --label_smoothing 0. \
     --batch_size $((BATCH_SIZE / NUM_GPUS_PER_NODE / ACCUM_STEP)) \
     --gradient_accumulation_steps ${ACCUM_STEP} \
     --do_train --do_valid --do_test \
-    --gpus $NUM_GPUS_PER_NODE  #  2>&1  | tee $SAVE_PATH/log_${DATESTR}.txt
+    --gpus $NUM_GPUS_PER_NODE
 done
