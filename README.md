@@ -59,7 +59,7 @@ Each predicted reaction will be visualized in a separate image, where
 <b style="color:green">green boxes are <i><u style="color:green">reaction conditions</u></i>,</b>
 <b style="color:blue">blue boxes are <i><u style="color:blue">products</u></i>.</b>
 
-<img src="assets/output/output0.png" width="425"/> <img src="assets/output/output1.png" width="425"/> 
+<img src="assets/output/output0.png" width="384"/> <img src="assets/output/output1.png" width="384"/> 
 
 This [notebook](notebook/predict.ipynb) shows how to run RxnScribe and visualize the prediction.
 
