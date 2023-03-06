@@ -72,16 +72,23 @@ pip install -r requirements.txt
 ```
 
 ## Data
-Download the reaction diagrams from this [link](https://www.dropbox.com/s/4y04awefvpn9tbc/images.zip?dl=0), 
+Download the reaction diagrams from this [link](https://huggingface.co/yujieq/RxnScribe/blob/main/images.zip), 
 and save them to `data/parse/images/`.
 
 The ground truth files can be found at [`data/parse/splits/`](data/parse/splits/).
 
 We perform five-fold cross validation in our experiments. The train/dev/test split for each fold is available.
 
+This [notebook](notebook/visualize_data.ipynb) shows how to visualize the diagram and the ground truth.
+
 ## Train and Evaluate RxnScribe
 Run this script to train and evaluate RxnScribe with five-fold cross validation.
 ```bash
 bash scripts/train_pix2seq_cv.sh
 ```
-
+Finally, we train RxnScribe with 90% of the dataset, and use the remaining 10% as the dev set. 
+We release this [model checkpoint](https://huggingface.co/yujieq/RxnScribe/blob/main/pix2seq_reaction_full.ckpt) 
+as it is trained on more data.
+```bash
+bash scripts/train_pix2seq_full.sh
+```

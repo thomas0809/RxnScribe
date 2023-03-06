@@ -221,7 +221,7 @@ class ImageData(object):
         if image_file:
             self.image = cv2.imread(image_file)
             self.height, self.width, _ = self.image.shape
-        if image:
+        if image is not None:
             if not isinstance(image, np.ndarray):
                 image = np.asarray(image)
             self.image = image
