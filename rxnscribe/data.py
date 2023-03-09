@@ -46,7 +46,7 @@ class BBox(object):
         return self.image_data.image[y1:y2, x1:x2]
 
     COLOR = {1: 'r', 2: 'g', 3: 'b', 4: 'y'}
-    CATEGORY = {1: 'Mol', 2: 'Txt', 3: 'Idt'}
+    CATEGORY = {1: 'Mol', 2: 'Txt', 3: 'Idt', 4: 'Sup'}
 
     def draw(self, ax, color=None):
         x1, y1, x2, y2 = self.unnormalize()
