@@ -214,6 +214,7 @@ class ReactionSet(object):
 class ImageData(object):
 
     def __init__(self, data=None, predictions=None, image_file=None, image=None):
+        self.width, self.height = None, None
         if data:
             self.file_name = data['file_name']
             self.width = data['width']
@@ -348,9 +349,9 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     bbox_images.append(bbox.image())
                     bbox_indices.append((i, j))
         if len(bbox_images) > 0:
-            smiles_list, molfile_list = molscribe.predict_images(bbox_images, batch_size=batch_size)
-            for (i, j), smiles, molfile in zip(bbox_indices, smiles_list, molfile_list):
-                pred_reactions[i].bboxes[j].set_smiles(smiles, molfile)
+            predictions = molscribe.predict_images(bbox_images, batch_size=batch_size)
+            for (i, j), pred in zip(bbox_indices, predictions):
+                pred_reactions[i].bboxes[j].set_smiles(pred['smiles'], pred['molfile'])
     if ocr:
         for reaction in pred_reactions:
             for bbox in reaction.bboxes:

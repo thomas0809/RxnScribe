@@ -228,14 +228,6 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
         self.criterion = Criterion(args, tokenizer)
         self.molscribe = None
 
-    def get_molscribe(self):
-        if self.args.molscribe and self.molscribe is None:
-            from molscribe import MolScribe
-            from huggingface_hub import hf_hub_download
-            ckpt_path = hf_hub_download("yujieq/MolScribe", "swin_base_char_aux_1m.pth")
-            self.molscribe = MolScribe(ckpt_path, device=self.device)
-        return self.molscribe
-
     def training_step(self, batch, batch_idx):
         indices, images, refs = batch
         format = self.format
@@ -254,8 +246,7 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
         for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
             if format == 'reaction':
                 reactions = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
-                image_file = os.path.join(self.args.image_path, refs['file_name'][i])
-                reactions = postprocess_reactions(reactions, image_file=image_file, molscribe=self.get_molscribe())
+                reactions = postprocess_reactions(reactions)
                 batch_preds[format].append(reactions)
             if format == 'bbox':
                 bboxes = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
