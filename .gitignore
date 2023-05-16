@@ -1,2 +1,3 @@
 scripts/*.sh
 **/__pycache__
+*events.out*
