@@ -66,7 +66,7 @@ class ReactionDataset(Dataset):
             if self.format == 'bbox':
                 max_len = self.tokenizer['bbox'].max_len
                 label, label_out = self.tokenizer['bbox'].data_to_sequence(
-                    target, rand_order=args.rand_order, add_noise=args.add_noise)
+                    target, rand_order=args.rand_order, split_heuristic = args.split_heuristic, add_noise=args.add_noise)
                 ref['bbox'] = torch.LongTensor(label[:max_len])
                 ref['bbox_out'] = torch.LongTensor(label_out[:max_len])
         return image, ref

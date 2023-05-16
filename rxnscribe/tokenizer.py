@@ -412,13 +412,41 @@ class BboxTokenizer(ReactionTokenizer):
         else:
             return self.jitter_bbox(random.choice(bboxes))
 
-    def data_to_sequence(self, data, add_noise=False, rand_order=False):
+    def split_heuristic_helper(self, toprocess):
+        maxy = 0 
+        for pair in toprocess:
+            if pair[0][1]>maxy:
+                maxy = pair[0][1]
+        numbuckets = int(maxy//500 + 1)
+
+        buckets = {}
+        for i in range(numbuckets):
+            buckets[i] = []
+
+        for pair in toprocess:
+            buckets[int(pair[0][1]//500)].append(pair)
+
+        for bucket in buckets:
+            buckets[bucket] = sorted(buckets[bucket], key = lambda x: x[0][0])
+        toreturn = []
+
+        for bucket in buckets:
+            toreturn+=buckets[bucket]
+
+        return toreturn
+
+    def data_to_sequence(self, data, add_noise=False, rand_order=False, split_heuristic=False):
         sequence = [self.SOS_ID]
         sequence_out = [self.SOS_ID]
         if rand_order:
             perm = np.random.permutation(len(data['boxes']))
             boxes = data['boxes'][perm].tolist()
             labels = data['labels'][perm].tolist()
+        elif split_heuristic:
+            to_process = list(zip(data['boxes'].tolist(), data['labels'].tolist()))
+            processed = self.split_heuristic_helper(to_process)
+            boxes = [item[0] for item in processed]
+            labels = [item[1] for item in processed]
         else:
             boxes = data['boxes'].tolist()
             labels = data['labels'].tolist()

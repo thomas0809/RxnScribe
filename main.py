@@ -92,6 +92,7 @@ def get_args(notebook=False):
     parser.add_argument('--coord_bins', type=int, default=100)
     parser.add_argument('--sep_xy', action='store_true')
     parser.add_argument('--rand_order', action='store_true', help="randomly permute the sequence of input targets")
+    parser.add_argument('--split_heuristic', action = 'store_true', help="make the sequence of tokens follow a heuristic")
     parser.add_argument('--add_noise', action='store_true')
     parser.add_argument('--mix_noise', action='store_true')
     parser.add_argument('--shuffle_bbox', action='store_true')
