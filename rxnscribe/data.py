@@ -359,3 +359,7 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     text = ocr.readtext(bbox.image(), detail=0)
                     bbox.set_text(text)
     return pred_reactions.to_json()
+
+def postprocess_bboxes(bboxes):
+    #TODO
+    return bboxes
