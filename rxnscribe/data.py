@@ -349,8 +349,12 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     bbox_images.append(bbox.image())
                     bbox_indices.append((i, j))
         if len(bbox_images) > 0:
+            print(type(molscribe))
             predictions = molscribe.predict_images(bbox_images, batch_size=batch_size)
+            print(type(predictions))
+
             for (i, j), pred in zip(bbox_indices, predictions):
+                print(pred)
                 pred_reactions[i].bboxes[j].set_smiles(pred['smiles'], pred['molfile'])
     if ocr:
         for reaction in pred_reactions:
@@ -363,3 +367,4 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
 def postprocess_bboxes(bboxes):
     #TODO
     return bboxes
+    

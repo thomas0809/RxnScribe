@@ -10,7 +10,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from pix2seq.pix2seq import build_pix2seq_model
 from tokenizer import get_tokenizer
 from dataset import make_transforms
-from data import postprocess_reactions, postprocess_bboxes, ReactionImageData
+from data import postprocess_reactions, postprocess_bboxes, ReactionImageData, ImageData
 
 from molscribe import MolScribe
 from huggingface_hub import hf_hub_download
@@ -99,6 +99,8 @@ class RxnScribe:
                 pred_seqs, pred_scores = self.model(images, max_len=tokenizer.max_len)
             for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
                 reactions = tokenizer.sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs[i]['scale'])
+                print("reactions!")
+                print(reactions)
                 reactions = postprocess_reactions(
                     reactions,
                     image=input_images[i],
@@ -252,18 +254,38 @@ class MolDetect:
     def predict_image_file(self, image_file: str, **kwargs):
         predictions = self.predict_image_files([image_file], **kwargs)
         return predictions[0]
+    
+    def draw_bboxes(self, predictions, image=None, image_file=None):
+        results = []
+        assert image or image_file
+        data = ImageData(predictions = predictions, image = image, image_file = image_file)
+        h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
+        fig, ax = plt.subplots(figsize = (w, h))
+        fig.tight_layout()
+        canvas = FigureCanvasAgg(fig)
+        ax.imshow(data.image)
+        ax.axis('off')
+        data.draw_prediction(ax, data.image)
+        canvas.draw()
+        buf = canvas.buffer_rgba()
+        results.append(np.asarray(buf))
+        plt.close(fig)
+        return results
             
 
 def main():
+
     ckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "best.ckpt")
     model = MolDetect(ckpt_path, device=torch.device('cpu'))
 
     
     image_file = "data/detect/images/jacs.5b12989-Table-c3.png"
     predictions = model.predict_image_file(image_file)
-    for p in predictions: 
-        if p['category_id'] == 1:
-            print(p)
+    
+    visualize_images = model.draw_bboxes(predictions, image_file = image_file)
+
+    print(type(visualize_images))
+    print(visualize_images)
     
 
 if __name__ == "__main__":
