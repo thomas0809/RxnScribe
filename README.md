@@ -63,7 +63,12 @@ Each predicted reaction will be visualized in a separate image, where
 
 If you only want to detect bounding boxes for key features, download the checkpoint for MolDetect instead: 
 
-```pythonckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "best.ckpt")
+```python 
+import torch
+from rxnscribe import RxnScribe
+from huggingface_hub import hf_hub_download
+
+ckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "best.ckpt")
 model = RxnScribe(ckpt_path, device=torch.device('cpu'))
 
 image_file = "assets/jacs.5b12989-Table-c3.png"
