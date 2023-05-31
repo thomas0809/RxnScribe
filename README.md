@@ -1,6 +1,6 @@
 # RxnScribe 
 
-This is the repository for RxnScribe, a sequence generation model for reaction diagram parsing.
+This is the repository for RxnScribe and MolDetect, a sequence generation model for reaction diagram parsing.
 Try our [demo](https://huggingface.co/spaces/yujieq/RxnScribe) on Hugging Face!
 
 ![](assets/model.png)
@@ -8,7 +8,7 @@ Try our [demo](https://huggingface.co/spaces/yujieq/RxnScribe) on Hugging Face!
 ## Quick Start
 Run the following command to install the package and its dependencies:
 ```
-git clone git@github.com:thomas0809/RxnScribe.git
+git clone git@github.com:Ozymandias314/MolDetect.git
 cd RxnScribe
 python setup.py install
 ```
@@ -61,10 +61,42 @@ Each predicted reaction will be visualized in a separate image, where
 
 <img src="assets/output/output0.png" width="384"/> <img src="assets/output/output1.png" width="384"/> 
 
+If you only want to detect bounding boxes for key features, download the checkpoint for MolDetect instead: 
+
+```pythonckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "best.ckpt")
+model = RxnScribe(ckpt_path, device=torch.device('cpu'))
+
+image_file = "assets/jacs.5b12989-Table-c3.png"
+predictions = model.predict_image_file(image_file)
+```
+The predictions will be in the following format:
+```python
+[
+    {   #first bbox
+        'category': '[Sup]', 
+        'bbox': (0.0050025012506253125, 0.38273870663142223, 0.9934967483741871, 0.9450094869920168), 
+        'category_id': 4, 
+        'score': -0.07593922317028046
+    },
+    #More bounding boxes
+]
+```
+We provide a function to visualize the predicted bboxes:
+```python
+visualize_images = model.draw_bboxes(predictions, image_file = image_file)
+```
+
+Each predicted diagram will be visualized in a seperate image, where
+<b style="color:red">red boxes are <i><u style="color:red">molecules</u></i>,</b>
+<b style="color:green">green boxes are <i><u style="color:green">text</u></i>,</b>
+<b style="color:blue">blue boxes are <i><u style="color:blue">identifiers</u></i>.</b> 
+<b style="color:gold">gold boxes are <i><u style="color:blue">supplementary information</u></i>.</b> 
+
+<img src="assets/output/output2.png" width = "384"/>
+
 This [notebook](notebook/predict.ipynb) shows how to run RxnScribe and visualize the prediction.
 
 For development or reproducing the experiments, follow the instructions below.
-
 ## Requirements
 Install the required packages
 ```

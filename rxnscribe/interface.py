@@ -222,7 +222,7 @@ class MolDetect:
         model.eval()
         return model
     
-    def predict_images(self, input_images: List, batch_size = 16):
+    def predict_images(self, input_images: List, batch_size = 16, molscribe = None):
         device = self.device 
         tokenizer = self.tokenizer['bbox']
         predictions = []
@@ -238,19 +238,19 @@ class MolDetect:
                 predictions.append(bboxes)
         return predictions
 
-    def predict_image(self, image, **kwargs):
-        predictions = self.predict_images([image], **kwargs)
+    def predict_image(self, image):
+        predictions = self.predict_images([image])
         return predictions[0]
 
-    def predict_image_files(self, image_files: List, **kwargs):
+    def predict_image_files(self, image_files: List):
         input_images = []
         for path in image_files:
             image = PIL.Image.open(path).convert("RGB")
             input_images.append(image)
-        return self.predict_images(input_images, **kwargs)
+        return self.predict_images(input_images)
 
     def predict_image_file(self, image_file: str, **kwargs):
-        predictions = self.predict_image_files([image_file], **kwargs)
+        predictions = self.predict_image_files([image_file])
         return predictions[0]
     
     def draw_bboxes(self, predictions, image=None, image_file=None):
@@ -271,18 +271,4 @@ class MolDetect:
         return results
             
 
-def main():
 
-    ckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "best.ckpt")
-    model = MolDetect(ckpt_path, device=torch.device('cpu'))
-
-    
-    image_file = "data/detect/images/jacs.5b12989-Table-c3.png"
-    predictions = model.predict_image_file(image_file)
-    
-    visualize_images = model.draw_bboxes(predictions, image_file = image_file)
-
-    
-
-if __name__ == "__main__":
-    main()
