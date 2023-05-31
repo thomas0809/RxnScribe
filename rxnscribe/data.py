@@ -269,6 +269,17 @@ class ReactionImageData(ImageData):
                     pred_hit[j] = True
         return gold_hit, pred_hit
 
+def deduplicate_bboxes(bboxes):
+    results = []
+    for i in range(len(bboxes)):
+        duplicate = False
+        for j in range(i):
+            if get_iou(bboxes[i], bboxes[j]) > 0.9:
+                duplicate = True
+                break
+        if not duplicate:
+            results.append(bboxes[i])
+    return results
 
 def get_iou(bb1, bb2):
     """Calculate the Intersection over Union (IoU) of two bounding boxes."""
@@ -349,12 +360,9 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     bbox_images.append(bbox.image())
                     bbox_indices.append((i, j))
         if len(bbox_images) > 0:
-            print(type(molscribe))
             predictions = molscribe.predict_images(bbox_images, batch_size=batch_size)
-            print(type(predictions))
 
             for (i, j), pred in zip(bbox_indices, predictions):
-                print(pred)
                 pred_reactions[i].bboxes[j].set_smiles(pred['smiles'], pred['molfile'])
     if ocr:
         for reaction in pred_reactions:
@@ -365,6 +373,11 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
     return pred_reactions.to_json()
 
 def postprocess_bboxes(bboxes):
-    #TODO
-    return bboxes
+    bbox_objects = [BBox(bbox = bbox, image_data = None, xyxy = True, normalized = True) for bbox in bboxes]
+    bbox_objects_no_empty = [bbox for bbox in bbox_objects if not bbox.is_empty]
+    #deduplicate
+    deduplicated = deduplicate_bboxes(bbox_objects_no_empty)
+    return [bbox.to_json() for bbox in deduplicated]
+
+
     

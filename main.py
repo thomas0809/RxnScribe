@@ -18,7 +18,7 @@ from rxnscribe.pix2seq import build_pix2seq_model
 from rxnscribe.loss import Criterion
 from rxnscribe.tokenizer import get_tokenizer
 from rxnscribe.dataset import ReactionDataset, get_collate_fn
-from rxnscribe.data import postprocess_reactions
+from rxnscribe.data import postprocess_reactions, postprocess_bboxes
 from rxnscribe.evaluate import CocoEvaluator, ReactionEvaluator
 import rxnscribe.utils as utils
 
@@ -251,6 +251,7 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
                 batch_preds[format].append(reactions)
             if format == 'bbox':
                 bboxes = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
+                #bboxes = postprocess_bboxes(bboxes)
                 batch_preds[format].append(bboxes)
             batch_preds['file_name'].append(refs['file_name'][i])
         return indices, batch_preds

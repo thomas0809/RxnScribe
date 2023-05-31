@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence
 
-import transforms as T
+from . import transforms as T
 
 from pycocotools.coco import COCO
 from PIL import Image

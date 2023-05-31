@@ -7,10 +7,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-from pix2seq.pix2seq import build_pix2seq_model
-from tokenizer import get_tokenizer
-from dataset import make_transforms
-from data import postprocess_reactions, postprocess_bboxes, ReactionImageData, ImageData
+from .pix2seq import build_pix2seq_model
+from .tokenizer import get_tokenizer
+from .dataset import make_transforms
+from .data import postprocess_reactions, postprocess_bboxes, ReactionImageData, ImageData
 
 from molscribe import MolScribe
 from huggingface_hub import hf_hub_download
@@ -99,8 +99,6 @@ class RxnScribe:
                 pred_seqs, pred_scores = self.model(images, max_len=tokenizer.max_len)
             for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
                 reactions = tokenizer.sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs[i]['scale'])
-                print("reactions!")
-                print(reactions)
                 reactions = postprocess_reactions(
                     reactions,
                     image=input_images[i],
@@ -284,8 +282,6 @@ def main():
     
     visualize_images = model.draw_bboxes(predictions, image_file = image_file)
 
-    print(type(visualize_images))
-    print(visualize_images)
     
 
 if __name__ == "__main__":
