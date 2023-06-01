@@ -69,6 +69,13 @@ class ReactionDataset(Dataset):
                     target, rand_order=args.rand_order, split_heuristic = args.split_heuristic, add_noise=args.add_noise)
                 ref['bbox'] = torch.LongTensor(label[:max_len])
                 ref['bbox_out'] = torch.LongTensor(label_out[:max_len])
+            if self.format == 'coref':
+                max_len = self.tokenizer['coref'].max_len
+                label, label_out = self.tokenizer['coref'].data_to_sequence(
+                    target, rand_order = False, add_noise = False
+                )
+                ref['coref'] = torch.LongTensor(label[:max_len])
+                ref['coref_out'] = torch.LongTensor(label_out[:max_len])
         return image, ref
 
     def __getitem__(self, idx):

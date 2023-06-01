@@ -482,6 +482,54 @@ class BboxTokenizer(ReactionTokenizer):
             i += 1
         return bboxes
 
+class CorefTokenizer(ReactionTokenizer):
+
+    def __init__(self, input_size=100, sep_xy=True, pix2seq=False):
+        super(BboxTokenizer, self).__init__(input_size, sep_xy, pix2seq)
+
+    @property
+    def max_len(self):
+        return 500
+
+    @property
+    def output_constraint(self):
+        return False
+
+    def coref_tokenize(boxes, labels, corefs):
+        toreturn_boxes = []
+        toreturn_labels = []
+        
+        for pair in corefs:
+            for entry in pair:
+                toreturn_boxes.append(boxes[entry])
+                toreturn_labels.append(labels[entry])
+        return toreturn_boxes, toreturn_labels
+        
+    def data_to_sequence(self, data, add_noise = False, rand_order = False):
+        sequence = [self.SOS_ID]
+        sequence_out = [self.SOS_ID]
+        if rand_order:
+            #TODO
+            pass
+        else:
+            boxes, labels = self.coref_tokenize(data['boxes'], data['labels'], data['corefs'])
+        for bbox, category in zip(boxes, labels):
+            seq = self.bbox_to_sequence(bbox, category)
+            sequence += seq
+            # sequence[-1] = self.random_category()
+            sequence_out += seq
+        if add_noise:
+            pass
+            #TODO
+            '''
+            while len(sequence) < self.max_len:
+                bbox, category = self.augment_box(boxes)
+                sequence += self.bbox_to_sequence(bbox, category)
+                sequence_out += [self.PAD_ID] * 4 + [self.NOISE_ID]
+            '''
+        sequence.append(self.EOS_ID)
+        sequence_out.append(self.EOS_ID)
+        return sequence, sequence_out
 
 def get_tokenizer(args):
     tokenizer = {}
