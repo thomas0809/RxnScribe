@@ -3,3 +3,4 @@ scripts/*.sh
 *events.out*
 output/**/*.json
 *.png
+.ipynb_checkpoints
