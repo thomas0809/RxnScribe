@@ -7,7 +7,7 @@ BATCH_SIZE=32
 ACCUM_STEP=2
 
 PIX2SEQ_CKPT=./ckpts/checkpoint_e299_ap370.pth
-SAVE_PATH=output/bbox_detect
+SAVE_PATH=output/bbox_detect_dummy
 
 set -x
 mkdir -p $SAVE_PATH
@@ -24,7 +24,7 @@ NCCL_P2P_DISABLE=1 python main.py \
     --pix2seq_ckpt ${PIX2SEQ_CKPT} \
     --pred_eos \
     --lr 4e-4 \
-    --epochs 600 --eval_per_epoch 30 \
+    --epochs 9 --eval_per_epoch 3 \
     --warmup 0.02 \
     --label_smoothing 0. \
     --batch_size $((BATCH_SIZE / NUM_GPUS_PER_NODE / ACCUM_STEP)) \

@@ -269,6 +269,49 @@ class ReactionImageData(ImageData):
                     pred_hit[j] = True
         return gold_hit, pred_hit
 
+class CorefImageData(ImageData):
+
+    def __init__(self, data=None, predictions=None, image_file=None, image=None):
+        super().__init__(data=data, predictions = predictions, image_file=image_file, image=image)
+        if data and 'corefs' in data:
+            self.gold_corefs = data['corefs']
+    
+    def evaluate(self):
+        #for every bbox in self.gold_bboxes, match with highest iou in self.pred_bboxes
+        #a true hit is defined as follows: suppose a pair (i, j) is a coref. then if highest_iou(j) follows
+        #highest_iou(i) in pred_bboxes, it is a hit. 
+        #total number of predictions is number of bboxes in pred/2.
+        #precision = TP/number of predictions
+        #recall = TP/number of gt pairs
+
+        if hasattr(self, "pred_bboxes"):
+            hits = 0
+
+            matches = {}
+            for gold in self.gold_bboxes:
+                highest_iou = 0
+                highest_index = -1
+                for i, pred in enumerate(self.pred_bboxes):
+                    iou = get_iou(gold, pred)
+                    if iou> highest_iou and iou>0.5:
+                        highest_iou = iou
+                        highest_index = i
+                if highest_iou > 0.5:
+                    matches[gold] = highest_index
+            for coref_pair in self.gold_corefs:
+                mol = self.gold_bboxes[coref_pair[0]]
+                idx = self.gold_bboxes[coref_pair[1]]
+
+                if mol in matches and idx in matches and matches[mol] + 1 == matches[idx]:
+                    hits +=1 
+            return hits, len(self.gold_corefs), len(self.pred_bboxes)/2
+        
+        return 0, 0, 0
+
+    
+
+
+
 def deduplicate_bboxes(bboxes):
     results = []
     for i in range(len(bboxes)):

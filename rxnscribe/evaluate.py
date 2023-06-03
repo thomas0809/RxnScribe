@@ -6,7 +6,7 @@ import numpy as np
 from pycocotools.cocoeval import COCOeval
 from pycocotools.coco import COCO
 
-from .data import ImageData, ReactionImageData
+from .data import ImageData, ReactionImageData, CorefImageData
 
 
 class CocoEvaluator(object):
@@ -72,6 +72,8 @@ class ReactionEvaluator(object):
 
     def evaluate_image(self, gold_image, pred_image, **kwargs):
         data = ReactionImageData(gold_image, pred_image)
+
+
         return data.evaluate(**kwargs)
 
     def compute_metrics(self, gold_hits, gold_total, pred_hits, pred_total):
@@ -143,3 +145,26 @@ class ReactionEvaluator(object):
         for key, val in summarize.items():
             scores[key] = self.compute_metrics(val['gold_hits'], val['gold_total'], val['pred_hits'], val['pred_total'])
         return scores, summarize, size_stats
+
+class CorefEvaluator(object):
+
+    def evaluate_image(self, gold_image, pred_image, **kwargs):
+        data = CorefImageData(gold_image, predictions = pred_image)
+        return data.evaluate()
+    
+    def evaluate(self, groundtruths, predictions):
+        hits, gold_total, pred_total = 0, 0, 0
+        for gold_image, pred_image in zip(groundtruths, predictions):
+            hit, gold_pairs, pred_pairs = self.evaluate_image(gold_image, pred_image)
+            hits += hit
+            gold_total += gold_pairs
+            pred_total += pred_pairs
+        return hits, gold_total, pred_total
+    
+    def evaluate_summarize(self, groundtruths, predictions):
+        hits, gold_total, pred_total = self.evaluate(groundtruths, predictions)
+        precision = hits/max(pred_total, 1)
+        recall = hits/max(gold_total, 1)
+        f1 = precision * recall * 2 / max(precision + recall, 1e-6)
+        return (precision, recall, f1)
+        

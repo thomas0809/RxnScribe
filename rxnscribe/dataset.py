@@ -230,7 +230,7 @@ def get_collate_fn(pad_id):
         imgs = []
         batch = [ex for seq in batch for ex in seq]
         keys = list(batch[0][2].keys())
-        seq_formats = [key for key in keys if key in ['bbox', 'bbox_out', 'reaction', 'reaction_out']]
+        seq_formats = [key for key in keys if key in ['bbox', 'bbox_out', 'reaction', 'reaction_out', 'coref', 'coref_out']]
         refs = {key: [[], []] for key in seq_formats}
         for ex in batch:
             ids.append(ex[0])

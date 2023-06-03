@@ -19,7 +19,7 @@ from rxnscribe.loss import Criterion
 from rxnscribe.tokenizer import get_tokenizer
 from rxnscribe.dataset import ReactionDataset, get_collate_fn
 from rxnscribe.data import postprocess_reactions, postprocess_bboxes
-from rxnscribe.evaluate import CocoEvaluator, ReactionEvaluator
+from rxnscribe.evaluate import CocoEvaluator, ReactionEvaluator, CorefEvaluator
 import rxnscribe.utils as utils
 
 
@@ -187,6 +187,13 @@ class ReactionExtractor(LightningModule):
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
                     results['mol_only'], *_ = evaluator.evaluate_summarize(
                         self.eval_dataset.data, predictions['reaction'], mol_only=True, merge_condition=True)
+                elif format == 'coref':
+                    epoch = self.trainer.current_epoch
+                    evaluator = CorefEvaluator()
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    scores = [f1] 
                 else:
                     raise NotImplementedError
                 with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
@@ -251,8 +258,11 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
                 batch_preds[format].append(reactions)
             if format == 'bbox':
                 bboxes = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
-                #bboxes = postprocess_bboxes(bboxes)
+                bboxes = postprocess_bboxes(bboxes)
                 batch_preds[format].append(bboxes)
+            if format == 'coref':
+                corefs = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale = refs['scale'][i])
+                batch_preds[format].append(corefs)
             batch_preds['file_name'].append(refs['file_name'][i])
         return indices, batch_preds
 

@@ -485,7 +485,7 @@ class BboxTokenizer(ReactionTokenizer):
 class CorefTokenizer(ReactionTokenizer):
 
     def __init__(self, input_size=100, sep_xy=True, pix2seq=False):
-        super(BboxTokenizer, self).__init__(input_size, sep_xy, pix2seq)
+        super(CorefTokenizer, self).__init__(input_size, sep_xy, pix2seq)
 
     @property
     def max_len(self):
@@ -495,7 +495,7 @@ class CorefTokenizer(ReactionTokenizer):
     def output_constraint(self):
         return False
 
-    def coref_tokenize(boxes, labels, corefs):
+    def coref_tokenize(self, boxes, labels, corefs):
         toreturn_boxes = []
         toreturn_labels = []
         
@@ -504,7 +504,7 @@ class CorefTokenizer(ReactionTokenizer):
                 toreturn_boxes.append(boxes[entry])
                 toreturn_labels.append(labels[entry])
         return toreturn_boxes, toreturn_labels
-        
+
     def data_to_sequence(self, data, add_noise = False, rand_order = False):
         sequence = [self.SOS_ID]
         sequence_out = [self.SOS_ID]
@@ -512,8 +512,9 @@ class CorefTokenizer(ReactionTokenizer):
             #TODO
             pass
         else:
-            boxes, labels = self.coref_tokenize(data['boxes'], data['labels'], data['corefs'])
+            boxes, labels = self.coref_tokenize(data['boxes'].tolist(), data['labels'].tolist(), data['corefs'])
         for bbox, category in zip(boxes, labels):
+   
             seq = self.bbox_to_sequence(bbox, category)
             sequence += seq
             # sequence[-1] = self.random_category()
@@ -530,6 +531,24 @@ class CorefTokenizer(ReactionTokenizer):
         sequence.append(self.EOS_ID)
         sequence_out.append(self.EOS_ID)
         return sequence, sequence_out
+    
+    def sequence_to_data(self, sequence, scores=None, scale=None):
+        bboxes = []
+        i = 0
+        if len(sequence) > 0 and sequence[0] == self.SOS_ID:
+            i += 1
+        while i < len(sequence):
+            if sequence[i] == self.EOS_ID:
+                break
+            if i+4 < len(sequence):
+                bbox = self.sequence_to_bbox(sequence[i:i+5], scale)
+                if bbox is not None:
+                    if scores is not None:
+                        bbox['score'] = scores[i + 4]
+                    bboxes.append(bbox)
+                    i += 4
+            i += 1
+        return bboxes
 
 def get_tokenizer(args):
     tokenizer = {}
@@ -541,4 +560,6 @@ def get_tokenizer(args):
         tokenizer[format] = ReactionTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
     if format == 'bbox':
         tokenizer[format] = BboxTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
+    if format == 'coref':
+        tokenizer[format] = CorefTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
     return tokenizer
