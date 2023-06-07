@@ -72,7 +72,7 @@ class ReactionDataset(Dataset):
             if self.format == 'coref':
                 max_len = self.tokenizer['coref'].max_len
                 label, label_out = self.tokenizer['coref'].data_to_sequence(
-                    target, rand_order = False, add_noise = False
+                    target, rand_order = False, add_noise = False, split_heuristic = args.split_heuristic
                 )
                 ref['coref'] = torch.LongTensor(label[:max_len])
                 ref['coref_out'] = torch.LongTensor(label_out[:max_len])
@@ -186,6 +186,11 @@ class ReactionDataset(Dataset):
                 for key, seq in r.items():
                     newr[key] = [x + nbox for x in seq]
                 target["reactions"].append(newr)
+        if "corefs" in target1:
+            target["corefs"] = [pair for pair in target1["corefs"]]
+            nBoxes1 = len(target1["boxes"])
+            for pair in target2["corefs"]:
+                target["corefs"].append([pair[0]+nBoxes1, pair[1]+nBoxes1])
         return image, target
 
 

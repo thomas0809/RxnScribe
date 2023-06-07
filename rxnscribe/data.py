@@ -235,13 +235,18 @@ class ImageData(object):
     def draw_gold(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
-        for b in self.gold_bboxes:
+        for i, b in enumerate(self.gold_bboxes):
+            xmin, ymin, xmax, ymax = b.unnormalize()
+            ax.text(xmin - 40, ymin+ 40, str(i), fontsize=20, bbox=dict(facecolor='red', alpha=0.5))
             b.draw(ax)
 
     def draw_prediction(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
-        for b in self.pred_bboxes:
+        for i, b in enumerate(self.pred_bboxes):
+            xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
+            #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+            ax.text(xmin - 40, ymin+ 40, str(i), fontsize=20, bbox=dict(facecolor='red', alpha=0.5))
             b.draw(ax)
 
 
@@ -286,25 +291,39 @@ class CorefImageData(ImageData):
 
         if hasattr(self, "pred_bboxes"):
             hits = 0
-
+            num_preds = 0
+            for pred in self.pred_bboxes:
+                if pred.category_id == 3:
+                    num_preds+=1
             matches = {}
             for gold in self.gold_bboxes:
                 highest_iou = 0
                 highest_index = -1
                 for i, pred in enumerate(self.pred_bboxes):
                     iou = get_iou(gold, pred)
-                    if iou> highest_iou and iou>0.5:
+                    if iou> highest_iou:
                         highest_iou = iou
                         highest_index = i
-                if highest_iou > 0.5:
+                if highest_iou > 0.3 and gold.category_id == 1:
                     matches[gold] = highest_index
+                else:
+                    matches[gold]=highest_index
             for coref_pair in self.gold_corefs:
                 mol = self.gold_bboxes[coref_pair[0]]
                 idx = self.gold_bboxes[coref_pair[1]]
 
-                if mol in matches and idx in matches and matches[mol] + 1 == matches[idx]:
-                    hits +=1 
-            return hits, len(self.gold_corefs), len(self.pred_bboxes)/2
+                if mol in matches and idx in matches: 
+                    all_ids = True
+                    if matches[mol] < matches[idx]:
+                        for counter in range(matches[mol]+1, matches[idx], 1):
+                            if self.pred_bboxes[counter].category_id != 3:
+                                all_ids = False
+                        if all_ids:
+                            hits+=1
+
+            #print(matches)
+            #print(self.gold_corefs)
+            return hits, len(self.gold_corefs), num_preds
         
         return 0, 0, 0
 

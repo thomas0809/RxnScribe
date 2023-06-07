@@ -46,7 +46,7 @@ class BBox(object):
         return self.image_data.image[y1:y2, x1:x2]
 
     COLOR = {1: 'r', 2: 'g', 3: 'b', 4: 'y'}
-    CATEGORY = {1: 'Mol', 2: 'Txt', 3: 'Idt', 4: 'sup'}
+    CATEGORY = {1: 'Mol', 2: 'Txt', 3: 'Idt', 4: 'Sup'}
 
     def draw(self, ax, color=None):
         x1, y1, x2, y2 = self.unnormalize()
@@ -214,6 +214,7 @@ class ReactionSet(object):
 class ImageData(object):
 
     def __init__(self, data=None, predictions=None, image_file=None, image=None):
+        self.width, self.height = None, None
         if data:
             self.file_name = data['file_name']
             self.width = data['width']
@@ -240,7 +241,10 @@ class ImageData(object):
     def draw_prediction(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
-        for b in self.pred_bboxes:
+        for i, b in enumerate(self.pred_bboxes):
+            xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
+            #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+            ax.text(xmin - 40, ymin+ 40, str(i//2), fontsize=20, bbox=dict(facecolor='red', alpha=0.5))
             b.draw(ax)
 
 
@@ -268,6 +272,64 @@ class ReactionImageData(ImageData):
                     pred_hit[j] = True
         return gold_hit, pred_hit
 
+class CorefImageData(ImageData):
+
+    def __init__(self, data=None, predictions=None, image_file=None, image=None):
+        super().__init__(data=data, predictions = predictions, image_file=image_file, image=image)
+        if data and 'corefs' in data:
+            self.gold_corefs = data['corefs']
+    
+    def evaluate(self):
+        #for every bbox in self.gold_bboxes, match with highest iou in self.pred_bboxes
+        #a true hit is defined as follows: suppose a pair (i, j) is a coref. then if highest_iou(j) follows
+        #highest_iou(i) in pred_bboxes, it is a hit. 
+        #total number of predictions is number of bboxes in pred/2.
+        #precision = TP/number of predictions
+        #recall = TP/number of gt pairs
+
+        if hasattr(self, "pred_bboxes"):
+            hits = 0
+            num_preds = 0
+            for pred in self.pred_bboxes:
+                if pred.category_id == 3:
+                    num_preds+=1
+            matches = {}
+            for gold in self.gold_bboxes:
+                highest_iou = 0
+                highest_index = -1
+                for i, pred in enumerate(self.pred_bboxes):
+                    iou = get_iou(gold, pred)
+                    if iou> highest_iou and iou>0.5:
+                        highest_iou = iou
+                        highest_index = i
+                if highest_iou > 0.2:
+                    matches[gold] = highest_index
+            for coref_pair in self.gold_corefs:
+                mol = self.gold_bboxes[coref_pair[0]]
+                idx = self.gold_bboxes[coref_pair[1]]
+
+                if mol in matches and idx in matches and matches[mol] + 1 == matches[idx]:
+                    hits +=1
+            print(matches)
+            return hits, len(self.gold_corefs), num_preds
+        
+        return 0, 0, 0
+
+    
+
+
+
+def deduplicate_bboxes(bboxes):
+    results = []
+    for i in range(len(bboxes)):
+        duplicate = False
+        for j in range(i):
+            if get_iou(bboxes[i], bboxes[j]) > 0.9:
+                duplicate = True
+                break
+        if not duplicate:
+            results.append(bboxes[i])
+    return results
 
 def get_iou(bb1, bb2):
     """Calculate the Intersection over Union (IoU) of two bounding boxes."""
@@ -348,9 +410,10 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     bbox_images.append(bbox.image())
                     bbox_indices.append((i, j))
         if len(bbox_images) > 0:
-            smiles_list, molfile_list = molscribe.predict_images(bbox_images, batch_size=batch_size)
-            for (i, j), smiles, molfile in zip(bbox_indices, smiles_list, molfile_list):
-                pred_reactions[i].bboxes[j].set_smiles(smiles, molfile)
+            predictions = molscribe.predict_images(bbox_images, batch_size=batch_size)
+
+            for (i, j), pred in zip(bbox_indices, predictions):
+                pred_reactions[i].bboxes[j].set_smiles(pred['smiles'], pred['molfile'])
     if ocr:
         for reaction in pred_reactions:
             for bbox in reaction.bboxes:
@@ -358,3 +421,10 @@ def postprocess_reactions(reactions, image_file=None, image=None, molscribe=None
                     text = ocr.readtext(bbox.image(), detail=0)
                     bbox.set_text(text)
     return pred_reactions.to_json()
+
+def postprocess_bboxes(bboxes):
+    bbox_objects = [BBox(bbox = bbox, image_data = None, xyxy = True, normalized = True) for bbox in bboxes]
+    bbox_objects_no_empty = [bbox for bbox in bbox_objects if not bbox.is_empty]
+    #deduplicate
+    deduplicated = deduplicate_bboxes(bbox_objects_no_empty)
+    return [bbox.to_json() for bbox in deduplicated]

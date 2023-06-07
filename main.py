@@ -188,6 +188,8 @@ class ReactionExtractor(LightningModule):
                     results['mol_only'], *_ = evaluator.evaluate_summarize(
                         self.eval_dataset.data, predictions['reaction'], mol_only=True, merge_condition=True)
                 elif format == 'coref':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['coref'])
                     epoch = self.trainer.current_epoch
                     evaluator = CorefEvaluator()
                     results = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['coref'])

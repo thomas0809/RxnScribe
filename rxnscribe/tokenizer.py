@@ -495,24 +495,86 @@ class CorefTokenizer(ReactionTokenizer):
     def output_constraint(self):
         return False
 
-    def coref_tokenize(self, boxes, labels, corefs):
+    def split_heuristic_helper(self, toprocess):
+        maxy = 0 
+        compress = []
+        for pair in toprocess:
+            if pair[1] == 1 or pair[1] == 2:
+                compress.append([pair])
+            else:
+                compress[-1].append(pair)
+
+        for pair in toprocess:
+            if pair[0][1] > maxy and (pair[1] == 1 or pair[1] ==2):
+                maxy = pair[0][1]
+        numbuckets = int(maxy//500 + 1)
+
+        buckets = {}
+        for i in range(numbuckets):
+            buckets[i] = []
+
+        for bbox_group in compress:
+            buckets[int(bbox_group[0][0][1]//500)].append(bbox_group)
+
+        for bucket in buckets:
+            buckets[bucket] = sorted(buckets[bucket], key = lambda x: x[0][0][0])
+        toreturn = []
+
+        for bucket in buckets:
+            for bbox_group in buckets[bucket]:
+                toreturn+=bbox_group
+
+        return toreturn
+
+    def coref_tokenize(self, boxes, labels, corefs, split_heuristic = False):
+        coref_dict = {}
+        for pair in corefs:
+            if pair[0] in coref_dict:
+                coref_dict[pair[0]].append(pair[1])
+            else:
+                coref_dict[pair[0]] = [pair[1]]
+        #coref_dict = {pair[0]: pair[1] for pair in corefs}
         toreturn_boxes = []
         toreturn_labels = []
         
+        for i, label in enumerate(labels):
+            if i in coref_dict:
+                toreturn_boxes.append(boxes[i])
+                toreturn_labels.append(labels[i])
+                for index in coref_dict[i]:
+                    
+                    toreturn_boxes.append(boxes[index])
+                    toreturn_labels.append(labels[index])
+            elif label == 1:
+                toreturn_boxes.append(boxes[i])
+                toreturn_labels.append(labels[i])  
+        '''
         for pair in corefs:
             for entry in pair:
                 toreturn_boxes.append(boxes[entry])
                 toreturn_labels.append(labels[entry])
+        '''
+        if split_heuristic:
+            returned = self.split_heuristic_helper(list(zip(toreturn_boxes, toreturn_labels)))
+            toreturn_boxes = [r[0] for r in returned]
+            toreturn_labels = [r[1] for r in returned]
+        '''
+        if True:
+            for i, label in enumerate(labels): 
+                if label == 2:
+                    toreturn_boxes.append(boxes[i])
+                    toreturn_labels.append(labels[i])
+        '''
         return toreturn_boxes, toreturn_labels
 
-    def data_to_sequence(self, data, add_noise = False, rand_order = False):
+    def data_to_sequence(self, data, add_noise = False, rand_order = False, split_heuristic = False):
         sequence = [self.SOS_ID]
         sequence_out = [self.SOS_ID]
         if rand_order:
             #TODO
             pass
         else:
-            boxes, labels = self.coref_tokenize(data['boxes'].tolist(), data['labels'].tolist(), data['corefs'])
+            boxes, labels = self.coref_tokenize(data['boxes'].tolist(), data['labels'].tolist(), data['corefs'], split_heuristic)
         for bbox, category in zip(boxes, labels):
    
             seq = self.bbox_to_sequence(bbox, category)

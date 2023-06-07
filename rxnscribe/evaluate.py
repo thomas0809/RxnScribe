@@ -22,6 +22,7 @@ class CocoEvaluator(object):
         coco_dt = self.coco_gt.loadRes(results)
         cocoEval = COCOeval(self.coco_gt, coco_dt, 'bbox')
         cocoEval.params.imgIds = img_ids
+        cocoEval.params.catIds = [1]
         cocoEval.evaluate()
         cocoEval.accumulate()
         cocoEval.summarize()
