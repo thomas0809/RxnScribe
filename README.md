@@ -65,11 +65,11 @@ If you only want to detect bounding boxes for key features, download the checkpo
 
 ```python 
 import torch
-from rxnscribe import RxnScribe
+from rxnscribe import MolDetect
 from huggingface_hub import hf_hub_download
 
 ckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "best.ckpt")
-model = RxnScribe(ckpt_path, device=torch.device('cpu'))
+model = MolDetect(ckpt_path, device=torch.device('cpu'))
 
 image_file = "assets/jacs.5b12989-Table-c3.png"
 predictions = model.predict_image_file(image_file)
