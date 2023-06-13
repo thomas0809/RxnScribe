@@ -236,17 +236,12 @@ class ImageData(object):
         if image is not None:
             ax.imshow(image)
         for i, b in enumerate(self.gold_bboxes):
-            xmin, ymin, xmax, ymax = b.unnormalize()
-            ax.text(xmin - 40, ymin+ 40, str(i), fontsize=20, bbox=dict(facecolor='red', alpha=0.5))
             b.draw(ax)
 
     def draw_prediction(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
         for i, b in enumerate(self.pred_bboxes):
-            xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
-            #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
-            ax.text(xmin - 40, ymin+ 40, str(i), fontsize=20, bbox=dict(facecolor='red', alpha=0.5))
             b.draw(ax)
 
 
@@ -327,7 +322,46 @@ class CorefImageData(ImageData):
         
         return 0, 0, 0
 
-    
+    def draw_gold(self, ax, image=None):
+        if image is not None:
+            ax.imshow(image)
+        counter_dict = {}
+        counter = 0
+
+        for pair in self.gold_corefs:
+            mol, idt = pair 
+            if mol in counter_dict:
+                xmin, ymin, xmax, ymax = self.gold_bboxes[idt].unnormalize() #* np.array([w, h, w, h])
+                #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+                ax.text(xmin - 50, ymin+ 60, str(counter_dict[mol]), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5))
+                
+            else:
+                counter+=1
+                counter_dict[mol] = counter
+                xmin, ymin, xmax, ymax = self.gold_bboxes[mol].unnormalize() #* np.array([w, h, w, h])
+                #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+                ax.text(xmin - 50, ymin+ 60, str(counter), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5))
+                xmin, ymin, xmax, ymax = self.gold_bboxes[idt].unnormalize() #* np.array([w, h, w, h])
+                #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+                ax.text(xmin - 50, ymin+ 60, str(counter), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5)) 
+        for b in self.gold_bboxes:
+            b.draw(ax)
+
+    def draw_prediction(self, ax, image=None):
+        if image is not None:
+            ax.imshow(image)
+        counter = 0
+        for i, b in enumerate(self.pred_bboxes):
+            if (b.category_id == 1 or b.category_id == 2) and i < len(self.pred_bboxes) - 1 and self.pred_bboxes[i+1].category_id == 3:
+                counter += 1
+                xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
+                #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+                ax.text(xmin - 50, ymin+ 60, str(counter), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5))
+            elif b.category_id == 3:
+                xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
+                #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
+                ax.text(xmin - 50, ymin+ 60, str(counter), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5)) 
+            b.draw(ax) 
 
 
 
