@@ -10,7 +10,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from .pix2seq import build_pix2seq_model
 from .tokenizer import get_tokenizer
 from .dataset import make_transforms
-from .data import postprocess_reactions, postprocess_bboxes, ReactionImageData, ImageData
+from .data import postprocess_reactions, postprocess_bboxes, ReactionImageData, ImageData, CorefImageData
 
 from molscribe import MolScribe
 from huggingface_hub import hf_hub_download
@@ -166,14 +166,15 @@ class RxnScribe:
 
 class MolDetect:
 
-    def __init__(self, model_path, device = None):
+    def __init__(self, model_path, device = None, coref = False):
         """
         MolDetect Interface
         :param model_path: path of the model checkpoint. 
         :param device: torch device, defaults to be CPU.
         """
         args = self._get_args()
-        args.format = 'bbox'
+        if not coref: args.format = 'bbox'
+        else: args.format = 'coref'
         states = torch.load(model_path, map_location = torch.device('cpu'))
         if device is None:
             device = torch.device('cpu')
@@ -222,9 +223,13 @@ class MolDetect:
         model.eval()
         return model
     
-    def predict_images(self, input_images: List, batch_size = 16, molscribe = None):
+    def predict_images(self, input_images: List, batch_size = 16, molscribe = None, coref = False):
         device = self.device 
-        tokenizer = self.tokenizer['bbox']
+        if not coref:
+            tokenizer = self.tokenizer['bbox']
+        else:
+            print(self.tokenizer.keys())
+            tokenizer = self.tokenizer['coref']
         predictions = []
         for idx in range(0, len(input_images), batch_size):
             batch_images = input_images[idx:idx+batch_size]
@@ -234,29 +239,30 @@ class MolDetect:
                 pred_seqs, pred_scores = self.model(images, max_len=tokenizer.max_len)
             for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
                 bboxes = tokenizer.sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs[i]['scale'])
-                bboxes = postprocess_bboxes(bboxes)
+                if not coref: bboxes = postprocess_bboxes(bboxes)
                 predictions.append(bboxes)
         return predictions
 
-    def predict_image(self, image):
-        predictions = self.predict_images([image])
+    def predict_image(self, image, coref = False):
+        predictions = self.predict_images([image], coref = coref)
         return predictions[0]
 
-    def predict_image_files(self, image_files: List):
+    def predict_image_files(self, image_files: List, coref = False):
         input_images = []
         for path in image_files:
             image = PIL.Image.open(path).convert("RGB")
             input_images.append(image)
-        return self.predict_images(input_images)
+        return self.predict_images(input_images, coref = coref)
 
-    def predict_image_file(self, image_file: str, **kwargs):
-        predictions = self.predict_image_files([image_file])
+    def predict_image_file(self, image_file: str, coref = False, **kwargs):
+        predictions = self.predict_image_files([image_file], coref = coref)
         return predictions[0]
     
-    def draw_bboxes(self, predictions, image=None, image_file=None):
+    def draw_bboxes(self, predictions, image=None, image_file=None, coref = False):
         results = []
         assert image or image_file
-        data = ImageData(predictions = predictions, image = image, image_file = image_file)
+        if not coref: data = ImageData(predictions = predictions, image = image, image_file = image_file)
+        else: data = CorefImageData(predictions = predictions['bboxes'], image = image, image_file = image_file)
         h, w = np.array([data.height, data.width]) * 10 / max(data.height, data.width)
         fig, ax = plt.subplots(figsize = (w, h))
         fig.tight_layout()

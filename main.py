@@ -195,7 +195,14 @@ class ReactionExtractor(LightningModule):
                     results = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['coref'])
                     precision, recall, f1 = results
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
-                    scores = [f1] 
+                    scores = [f1]
+                    self.print("now evaluating csr_prediction no proc")
+                    with open('./output/csr_predictions_no_proc_bbox.json') as f:
+                        pred1 = json.load(f)
+                    stats = coco_evaluator.evaluate(pred1['coref'])
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, pred1['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
                 else:
                     raise NotImplementedError
                 with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:

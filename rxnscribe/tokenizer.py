@@ -610,7 +610,22 @@ class CorefTokenizer(ReactionTokenizer):
                     bboxes.append(bbox)
                     i += 4
             i += 1
-        return bboxes
+        return {'bboxes': bboxes, 'corefs': self.bbox_to_coref(bboxes)}
+    
+    def bbox_to_coref(self, bboxes):
+        corefs = []
+
+        for i in range(len(bboxes) - 1):
+            if bboxes[i]['category_id'] == 1 or bboxes[i]['category_id'] == 2:
+                j = i + 1
+                while j < len(bboxes) and bboxes[j]['category_id'] == 3:
+                    corefs.append([i, j])
+                    j += 1
+
+        return corefs 
+            
+
+        
 
 def get_tokenizer(args):
     tokenizer = {}
