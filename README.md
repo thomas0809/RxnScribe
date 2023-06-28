@@ -5,6 +5,22 @@ Try our [demo](https://huggingface.co/spaces/yujieq/RxnScribe) on Hugging Face!
 
 ![](assets/model.png)
 
+Molecule structure recognition is supported by MolScribe 
+([paper](https://pubs.acs.org/doi/10.1021/acs.jcim.2c01480), 
+[code](https://github.com/thomas0809/MolScribe), 
+[demo](https://huggingface.co/spaces/yujieq/MolScribe)).
+
+If you use RxnScribe in your research, please cite our [paper](https://pubs.acs.org/doi/10.1021/acs.jcim.3c00439).
+```
+@article{
+    RxnScribe,
+    author = {Qian, Yujie and Guo, Jiang and Tu, Zhengkai and Coley, Connor W. and Barzilay, Regina},
+    title = {RxnScribe: A Sequence Generation Model for Reaction Diagram Parsing},
+    journal = {Journal of Chemical Information and Modeling},
+    doi = {10.1021/acs.jcim.3c00439}
+}
+```
+
 ## Quick Start
 Run the following command to install the package and its dependencies:
 ```
@@ -86,9 +102,8 @@ Run this script to train and evaluate RxnScribe with five-fold cross validation.
 ```bash
 bash scripts/train_pix2seq_cv.sh
 ```
-Finally, we train RxnScribe with 90% of the dataset, and use the remaining 10% as the dev set. 
-We release this [model checkpoint](https://huggingface.co/yujieq/RxnScribe/blob/main/pix2seq_reaction_full.ckpt) 
-as it is trained on more data.
+Finally, we train RxnScribe with 90% of the dataset, and use the remaining 10% as the dev set.
+We have released the [model checkpoint](https://huggingface.co/yujieq/RxnScribe/blob/main/pix2seq_reaction_full.ckpt).
 ```bash
 bash scripts/train_pix2seq_full.sh
 ```
