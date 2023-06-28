@@ -5,11 +5,6 @@ Try our [demo](https://huggingface.co/spaces/yujieq/RxnScribe) on Hugging Face!
 
 ![](assets/model.png)
 
-Molecule structure recognition is supported by MolScribe 
-([paper](https://pubs.acs.org/doi/10.1021/acs.jcim.2c01480), 
-[code](https://github.com/thomas0809/MolScribe), 
-[demo](https://huggingface.co/spaces/yujieq/MolScribe)).
-
 If you use RxnScribe in your research, please cite our [paper](https://pubs.acs.org/doi/10.1021/acs.jcim.3c00439).
 ```
 @article{
@@ -20,6 +15,11 @@ If you use RxnScribe in your research, please cite our [paper](https://pubs.acs.
     doi = {10.1021/acs.jcim.3c00439}
 }
 ```
+
+Molecule structure recognition is supported by MolScribe 
+([paper](https://pubs.acs.org/doi/10.1021/acs.jcim.2c01480), 
+[code](https://github.com/thomas0809/MolScribe), 
+[demo](https://huggingface.co/spaces/yujieq/MolScribe)).
 
 ## Quick Start
 Run the following command to install the package and its dependencies:
