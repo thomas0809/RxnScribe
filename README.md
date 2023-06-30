@@ -99,47 +99,6 @@ Each predicted diagram will be visualized in a seperate image, where
 
 <img src="assets/output/output2.png" width = "384"/>
 
-To detect bounding boxes and also the coreference, download the coreference checkpoint for MolDetect on huggingface and also set the coref field to be true:
-
-```python 
-import torch
-from rxnscribe import MolDetect
-from huggingface_hub import hf_hub_download
-
-ckpt_path = hf_hub_download("Ozymandias314/MolDetectCkpt", "coref_best.ckpt")
-model = MolDetect(ckpt_path, device=torch.device('cpu'), coref = True)
-
-image_file = "assets/jacs.5b12989-Table-c3.png"
-predictions = model.predict_image_file(image_file, coref = True)
-```
-
-The predictions will be in the following format:
-
-```python
-{
-    'bboxes': [
-        {   #first bbox
-            'category': '[Sup]', 
-            'bbox': (0.0050025012506253125, 0.38273870663142223, 0.9934967483741871, 0.9450094869920168), 
-            'category_id': 4, 
-            'score': -0.07593922317028046
-        },
-        #More bounding boxes
-    ],
-    'coref': [
-        [0, 1],
-        [3, 4],
-        #More coref pairs
-    ]
-}
-```
-
-Similarly, we provide a function to visualize the predicted bboxes:
-
-```python
-visualize_images = model.draw_bboxes(predictions, image_file = image_file, coref = True)
-```
-
 This [notebook](notebook/predict.ipynb) shows how to run RxnScribe and visualize the prediction.
 
 For development or reproducing the experiments, follow the instructions below.
