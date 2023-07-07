@@ -14,7 +14,7 @@ setup(
     install_requires=[
         'torch',
         'numpy>=1.19.5',
-        'pandas>=1.2.4,',
+        'pandas>=1.2.4',
         'matplotlib>=3.5.3',
         'opencv-python>=4.5.5.64',
         'pycocotools==2.0.4',
