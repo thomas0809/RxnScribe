@@ -590,6 +590,9 @@ class CorefTokenizer(ReactionTokenizer):
                 sequence += self.bbox_to_sequence(bbox, category)
                 sequence_out += [self.PAD_ID] * 4 + [self.NOISE_ID]
             '''
+        
+        #sequence = sequence[:6]
+        #sequence_out = sequence_out[:6]
         sequence.append(self.EOS_ID)
         sequence_out.append(self.EOS_ID)
         return sequence, sequence_out
@@ -624,6 +627,41 @@ class CorefTokenizer(ReactionTokenizer):
 
         return corefs 
             
+class CocoTokenizer(BboxTokenizer):
+
+    def __init__(self, input_size=100, sep_xy=True, pix2seq=False):
+        super(CocoTokenizer, self).__init__(input_size, sep_xy, pix2seq)
+
+    @property
+    def max_len(self):
+        return 700
+
+    def random_category(self):
+        return random.randint(1, 80)
+
+
+    def bbox_to_sequence(self, bbox, category):
+        sequence = []
+        x1, y1, x2, y2 = bbox
+        if x1 >= x2 or y1 >= y2:
+            return []
+        sequence.append(self.x_to_id(x1))
+        sequence.append(self.y_to_id(y1))
+        sequence.append(self.x_to_id(x2))
+        sequence.append(self.y_to_id(y2))
+
+        sequence.append(2005+category)
+
+        return sequence
+
+    def sequence_to_bbox(self, sequence, scale=[1, 1]):
+        if len(sequence) < 5:
+            return None
+        x1, y1 = self.id_to_x(sequence[0], scale[0]), self.id_to_y(sequence[1], scale[1])
+        x2, y2 = self.id_to_x(sequence[2], scale[0]), self.id_to_y(sequence[3], scale[1])
+        if x1 == -1 or y1 == -1 or x2 == -1 or y2 == -1 or x1 >= x2 or y1 >= y2 or sequence[4] not in self.itos:
+            return None
+        return { 'bbox': (x1, y1, x2, y2), 'category_id': sequence[4] - 2005}
 
         
 
@@ -636,7 +674,10 @@ def get_tokenizer(args):
     if format == 'reaction':
         tokenizer[format] = ReactionTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
     if format == 'bbox':
-        tokenizer[format] = BboxTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
+        if args.is_coco:
+            tokenizer[format] = CocoTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
+        else:
+            tokenizer[format] = BboxTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
     if format == 'coref':
         tokenizer[format] = CorefTokenizer(args.coord_bins, args.sep_xy, args.pix2seq)
     return tokenizer

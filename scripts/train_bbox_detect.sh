@@ -7,7 +7,7 @@ BATCH_SIZE=32
 ACCUM_STEP=2
 
 PIX2SEQ_CKPT=./ckpts/checkpoint_e299_ap370.pth
-SAVE_PATH=output/bbox_detect_dummy
+SAVE_PATH=output/5e-5_300epoch_coco
 
 set -x
 mkdir -p $SAVE_PATH
@@ -29,5 +29,5 @@ NCCL_P2P_DISABLE=1 python main.py \
     --label_smoothing 0. \
     --batch_size $((BATCH_SIZE / NUM_GPUS_PER_NODE / ACCUM_STEP)) \
     --gradient_accumulation_steps ${ACCUM_STEP} \
-    --do_test \
+    --do_train --do_test \
     --gpus $NUM_GPUS_PER_NODE

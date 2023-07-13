@@ -46,7 +46,6 @@ class CocoEvaluator(object):
             img_ids.append(image['id'])
             width = image['width']
             height = image['height']
-
             coco_results.extend(
                 [
                     {

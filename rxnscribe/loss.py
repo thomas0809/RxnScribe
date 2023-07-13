@@ -40,12 +40,13 @@ class LabelSmoothingLoss(nn.Module):
 
 class SequenceLoss(nn.Module):
 
-    def __init__(self, label_smoothing, vocab_size, ignore_index=-100, ignore_indices=[]):
+    def __init__(self, label_smoothing, vocab_size, ignore_index=-100, ignore_indices=[], punish_first = False):
         super(SequenceLoss, self).__init__()
         if ignore_indices:
             ignore_index = ignore_indices[0]
         self.ignore_index = ignore_index
         self.ignore_indices = ignore_indices
+        self.punish_first = punish_first
         if label_smoothing == 0:
             self.criterion = nn.CrossEntropyLoss(ignore_index=ignore_index, reduction='mean')
             # Cross entropy = KL divergence + constant
@@ -64,7 +65,10 @@ class SequenceLoss(nn.Module):
         for idx in self.ignore_indices:
             if idx != self.ignore_index:
                 target.masked_fill_((target == idx), self.ignore_index)
-        loss = self.criterion(output, target)
+        if self.punish_first:
+            loss = 10* self.criterion(output[:1, :], target[:1]) +self.criterion(output, target)
+        else:
+            loss = self.criterion(output, target)
         return loss
 
 
@@ -75,7 +79,7 @@ class Criterion(nn.Module):
         criterion = {}
         format = args.format
         tn = tokenizer[format]
-        criterion[format] = SequenceLoss(args.label_smoothing, len(tn), ignore_index=tn.PAD_ID)
+        criterion[format] = SequenceLoss(args.label_smoothing, len(tn), ignore_index=tn.PAD_ID, punish_first = args.punish_first)
         self.criterion = nn.ModuleDict(criterion)
 
     def forward(self, results, refs):

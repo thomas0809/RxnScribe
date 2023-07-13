@@ -3,6 +3,7 @@ import argparse
 from typing import List
 import PIL
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -14,9 +15,9 @@ from .data import postprocess_reactions, postprocess_bboxes, ReactionImageData, 
 
 from molscribe import MolScribe
 from huggingface_hub import hf_hub_download
-import easyocr
+#import easyocr
 
-
+'''
 class RxnScribe:
 
     def __init__(self, model_path, device=None):
@@ -163,7 +164,7 @@ class RxnScribe:
         result_image = np.asarray(buf)
         plt.close(fig)
         return result_image
-
+'''
 class MolDetect:
 
     def __init__(self, model_path, device = None, coref = False):
@@ -224,7 +225,7 @@ class MolDetect:
         return model
     
     def predict_images(self, input_images: List, batch_size = 16, molscribe = None, coref = False):
-        device = self.device 
+        device = self.device
         if not coref:
             tokenizer = self.tokenizer['bbox']
         else:
@@ -247,14 +248,15 @@ class MolDetect:
         predictions = self.predict_images([image], coref = coref)
         return predictions[0]
 
-    def predict_image_files(self, image_files: List, coref = False):
+    def predict_image_files(self, image_files: List, batch_size = 16, coref = False):
         input_images = []
         for path in image_files:
             image = PIL.Image.open(path).convert("RGB")
             input_images.append(image)
-        return self.predict_images(input_images, coref = coref)
+        return self.predict_images(input_images, batch_size = batch_size, coref = coref)
 
     def predict_image_file(self, image_file: str, coref = False, **kwargs):
+        print(coref)
         predictions = self.predict_image_files([image_file], coref = coref)
         return predictions[0]
     

@@ -5,7 +5,10 @@ import random
 import argparse
 import numpy as np
 
+import time
+
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
 import torch.distributed as dist
 import pytorch_lightning as pl
 from pytorch_lightning import LightningModule, LightningDataModule
@@ -21,6 +24,7 @@ from rxnscribe.dataset import ReactionDataset, get_collate_fn
 from rxnscribe.data import postprocess_reactions, postprocess_bboxes
 from rxnscribe.evaluate import CocoEvaluator, ReactionEvaluator, CorefEvaluator
 import rxnscribe.utils as utils
+from rxnscribe.pix2seq.transformer import build_transformer
 
 
 def get_args(notebook=False):
@@ -55,11 +59,16 @@ def get_args(notebook=False):
     group.add_argument("--hidden_dropout", help="Hidden dropout", type=float, default=0.1)
     group.add_argument("--attn_dropout", help="Attention dropout", type=float, default=0.1)
     group.add_argument("--max_relative_positions", help="Max relative positions", type=int, default=0)
+
+    parser.add_argument('--is_coco', action = 'store_true')
+    
     # Pix2Seq
     parser.add_argument('--pix2seq', action='store_true', help="specify the model from playground")
     parser.add_argument('--pix2seq_ckpt', type=str, default=None)
     parser.add_argument('--large_scale_jitter', action='store_true', help='large scale jitter')
     parser.add_argument('--pred_eos', action='store_true', help='use eos token instead of predicting 100 objects')
+    parser.add_argument('--use_hf_transformer', action='store_true', help='use huggingface transformer for transformer')
+    parser.add_argument('--linear_head', action = 'store_true')
     # * Backbone
     parser.add_argument('--backbone', default='resnet50', type=str, help="Name of the convolutional backbone to use")
     parser.add_argument('--dilation', action='store_true',
@@ -121,9 +130,14 @@ def get_args(notebook=False):
     parser.add_argument('--beam_size', type=int, default=1)
     parser.add_argument('--n_best', type=int, default=1)
     parser.add_argument('--molscribe', action='store_true')
+
+    parser.add_argument('--punish_first', action='store_true')
+
     args = parser.parse_args([]) if notebook else parser.parse_args()
 
     args.images = args.images.split(',')
+
+
 
     return args
 
@@ -138,6 +152,8 @@ class ReactionExtractor(LightningModule):
         args.encoder_dim = self.encoder.n_features
         self.decoder = Decoder(args, tokenizer)
         self.criterion = Criterion(args, tokenizer)
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
 
     def training_step(self, batch, batch_idx):
         indices, images, refs = batch
@@ -155,19 +171,19 @@ class ReactionExtractor(LightningModule):
         batch_preds, batch_beam_preds = self.decoder.decode(
             features, hiddens, refs,
             beam_size=self.args.beam_size, n_best=self.args.n_best)
+        self.validation_step_outputs.append(batch_preds)
         return indices, batch_preds
 
-    def validation_epoch_end(self, outputs, phase='val'):
+    def on_validation_epoch_end(self):
         if self.trainer.num_devices > 1:
             gathered_outputs = [None for i in range(self.trainer.num_devices)]
-            dist.all_gather_object(gathered_outputs, outputs)
+            dist.all_gather_object(gathered_outputs, self.validation_step_outputs)
             gathered_outputs = sum(gathered_outputs, [])
         else:
-            gathered_outputs = outputs
-
+            gathered_outputs = self.validation_step_outputs
+        self.validation_step_outputs.clear()
         format = self.args.format
         predictions = utils.merge_predictions(gathered_outputs)
-
         name = self.eval_dataset.name
         scores = [0]
 
@@ -196,6 +212,7 @@ class ReactionExtractor(LightningModule):
                     precision, recall, f1 = results
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
                     scores = [f1]
+                    '''
                     self.print("now evaluating csr_prediction no proc")
                     with open('./output/csr_predictions_no_proc_bbox.json') as f:
                         pred1 = json.load(f)
@@ -203,23 +220,85 @@ class ReactionExtractor(LightningModule):
                     results = evaluator.evaluate_summarize(self.eval_dataset.data, pred1['coref'])
                     precision, recall, f1 = results
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    '''
                 else:
                     raise NotImplementedError
                 with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
                     json.dump(results, f)
-                if phase == 'test':
-                    self.print(json.dumps(results, indent=4))
+                #if phase == 'test':
+                #    self.print(json.dumps(results, indent=4))
             with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
                 json.dump(predictions, f)
 
         dist.broadcast_object_list(scores)
-        self.log(f'{phase}/score', scores[0], prog_bar=True, rank_zero_only=True)
+        self.log('val/score', scores[0], prog_bar=True, rank_zero_only=True)
 
     def test_step(self, batch, batch_idx):
-        return self.validation_step(batch, batch_idx)
+        indices, images, refs = batch
+        features, hiddens = self.encoder(images, refs)
+        batch_preds, batch_beam_preds = self.decoder.decode(
+            features, hiddens, refs,
+            beam_size=self.args.beam_size, n_best=self.args.n_best)
+        self.test_step_outputs.append(batch_preds)
+        return indices, batch_preds
 
-    def test_epoch_end(self, outputs):
-        return self.validation_epoch_end(outputs, phase='test')
+    def on_test_epoch_end(self):
+        if self.trainer.num_devices > 1:
+            gathered_outputs = [None for i in range(self.trainer.num_devices)]
+            dist.all_gather_object(gathered_outputs, self.test_step_outputs)
+            gathered_outputs = sum(gathered_outputs, [])
+        else:
+            gathered_outputs = self.test_step_outputs
+        self.test_step_outputs.clear()
+        format = self.args.format
+        predictions = utils.merge_predictions(gathered_outputs)
+        name = self.eval_dataset.name
+        scores = [0]
+
+        if self.trainer.is_global_zero:
+            if not self.args.no_eval:
+                if format == 'bbox':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['bbox'])
+                    scores = results = list(stats)
+                elif format == 'reaction':
+                    epoch = self.trainer.current_epoch
+                    evaluator = ReactionEvaluator()
+                    results, *_ = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['reaction'])
+                    precision, recall, f1 = \
+                        results['overall']['precision'], results['overall']['recall'], results['overall']['f1']
+                    scores = [f1]
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    results['mol_only'], *_ = evaluator.evaluate_summarize(
+                        self.eval_dataset.data, predictions['reaction'], mol_only=True, merge_condition=True)
+                elif format == 'coref':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['coref'])
+                    epoch = self.trainer.current_epoch
+                    evaluator = CorefEvaluator()
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    scores = [f1]
+                    '''
+                    self.print("now evaluating csr_prediction no proc")
+                    with open('./output/csr_predictions_no_proc_bbox.json') as f:
+                        pred1 = json.load(f)
+                    stats = coco_evaluator.evaluate(pred1['coref'])
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, pred1['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    '''
+                else:
+                    raise NotImplementedError
+                with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
+                    json.dump(results, f)
+                self.print(json.dumps(results, indent=4))
+            with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
+                json.dump(predictions, f)
+
+        dist.broadcast_object_list(scores)
+        self.log('test/score', scores[0], prog_bar=True, rank_zero_only=True)
 
     def predict_step(self, batch, batch_idx):
         return self.validation_step(batch, batch_idx)
@@ -234,28 +313,136 @@ class ReactionExtractor(LightningModule):
         return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'step'}}
 
 
-class ReactionExtractorPix2Seq(ReactionExtractor):
+class ReactionExtractorPix2Seq(LightningModule):
 
     def __init__(self, args, tokenizer):
-        super(ReactionExtractor, self).__init__()
+        super().__init__()
         self.args = args
         self.tokenizer = tokenizer
         self.format = args.format
+       
         self.model = build_pix2seq_model(args, tokenizer[self.format])
         self.criterion = Criterion(args, tokenizer)
         self.molscribe = None
+        format = self.format
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
 
     def training_step(self, batch, batch_idx):
+
+        print("training step")
         indices, images, refs = batch
         format = self.format
+        #print("refs "+str(refs))
+        if self.args.use_hf_transformer:
+            logits, loss = self.model(images, refs[format])
+            #print(loss)
+            return loss
         results = {format: (self.model(images, refs[format]), refs[format+'_out'][0][:, 1:])}
         losses = self.criterion(results, refs)
         loss = sum(losses.values())
+        
+        #print(loss)
         self.log('train/loss', loss)
         self.log('lr', self.lr_schedulers().get_lr()[0], prog_bar=True, logger=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
+        indices, images, refs = batch
+        format = self.format
+        batch_preds = {format: [], 'file_name': []}
+        pred_seqs, pred_scores = self.model(images, max_len=self.tokenizer[format].max_len)#, cheat = refs)
+        #print(refs)
+        #print(pred_seqs)
+        #print(pred_seqs.shape)
+
+        #return pred_seqs
+
+        for i, (seqs, scores) in enumerate(zip(pred_seqs, pred_scores)):
+            if format == 'reaction':
+                reactions = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
+                reactions = postprocess_reactions(reactions)
+                batch_preds[format].append(reactions)
+                #self.test_step_outputs[format].append(reactions)
+            if format == 'bbox':
+                bboxes = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
+                bboxes = postprocess_bboxes(bboxes)
+                batch_preds[format].append(bboxes)
+                #self.test_step_outputs[format].append(bboxes)
+            if format == 'coref':
+                corefs = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale = refs['scale'][i])['bboxes']
+                batch_preds[format].append(corefs)
+                #self.test_step_outputs[format].append(corefs)
+            batch_preds['file_name'].append(refs['file_name'][i])
+            #self.test_step_outputs['file_name'].append(refs['file_name'][i])
+        self.validation_step_outputs.append((indices, batch_preds))
+        return indices, batch_preds
+    
+    def on_validation_epoch_end(self):
+        format = self.format
+        if self.trainer.num_devices > 1:
+            gathered_outputs = [None for i in range(self.trainer.num_devices)]
+            dist.all_gather_object(gathered_outputs, self.validation_step_outputs)
+            gathered_outputs = sum(gathered_outputs, [])
+        else:
+            gathered_outputs = self.validation_step_outputs
+        #self.validation_step_outputs[format].clear()
+        #self.validation_step_outputs['file_name'].clear()
+        format = self.args.format
+        predictions = utils.merge_predictions(gathered_outputs)
+        name = self.eval_dataset.name
+        scores = [0]
+
+        if self.trainer.is_global_zero:
+            if not self.args.no_eval:
+                if format == 'bbox':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['bbox'])
+                    scores = results = list(stats)
+                elif format == 'reaction':
+                    epoch = self.trainer.current_epoch
+                    evaluator = ReactionEvaluator()
+                    results, *_ = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['reaction'])
+                    precision, recall, f1 = \
+                        results['overall']['precision'], results['overall']['recall'], results['overall']['f1']
+                    scores = [f1]
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    results['mol_only'], *_ = evaluator.evaluate_summarize(
+                        self.eval_dataset.data, predictions['reaction'], mol_only=True, merge_condition=True)
+                elif format == 'coref':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['coref'])
+                    epoch = self.trainer.current_epoch
+                    evaluator = CorefEvaluator()
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    scores = [f1]
+                    '''
+                    self.print("now evaluating csr_prediction no proc")
+                    with open('./output/csr_predictions_no_proc_bbox.json') as f:
+                        pred1 = json.load(f)
+                    stats = coco_evaluator.evaluate(pred1['coref'])
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, pred1['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    '''
+                else:
+                    raise NotImplementedError
+                with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
+                    json.dump(results, f)
+                #if phase == 'test':
+                #    self.print(json.dumps(results, indent=4))
+            with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
+                json.dump(predictions, f)
+
+        dist.broadcast_object_list(scores)
+        self.log('val/score', scores[0], prog_bar=True, rank_zero_only=True)
+        self.validation_step_outputs.clear()
+
+        print("val epoch end end")
+
+    def test_step(self, batch, batch_idx):
         indices, images, refs = batch
         format = self.format
         batch_preds = {format: [], 'file_name': []}
@@ -265,15 +452,93 @@ class ReactionExtractorPix2Seq(ReactionExtractor):
                 reactions = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
                 reactions = postprocess_reactions(reactions)
                 batch_preds[format].append(reactions)
+                #self.test_step_outputs[format].append(reactions)
             if format == 'bbox':
                 bboxes = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale=refs['scale'][i])
                 bboxes = postprocess_bboxes(bboxes)
                 batch_preds[format].append(bboxes)
+                #self.test_step_outputs[format].append(bboxes)
             if format == 'coref':
-                corefs = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale = refs['scale'][i])
+                corefs = self.tokenizer[format].sequence_to_data(seqs.tolist(), scores.tolist(), scale = refs['scale'][i])['bboxes']
                 batch_preds[format].append(corefs)
+                #self.test_step_outputs[format].append(corefs)
             batch_preds['file_name'].append(refs['file_name'][i])
+            #self.test_step_outputs['file_name'].append(refs['file_name'][i])
+        self.test_step_outputs.append((indices, batch_preds))
         return indices, batch_preds
+
+    def on_test_epoch_end(self):
+        format = self.format
+        if self.trainer.num_devices > 1:
+            gathered_outputs = [None for i in range(self.trainer.num_devices)]
+            dist.all_gather_object(gathered_outputs, self.test_step_outputs)
+            gathered_outputs = sum(gathered_outputs, [])
+        else:
+            gathered_outputs = self.test_step_outputs
+        format = self.args.format
+        predictions = utils.merge_predictions(gathered_outputs)
+        name = self.eval_dataset.name
+        scores = [0]
+
+        if self.trainer.is_global_zero:
+            if not self.args.no_eval:
+                if format == 'bbox':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['bbox'])
+                    scores = results = list(stats)
+                elif format == 'reaction':
+                    epoch = self.trainer.current_epoch
+                    evaluator = ReactionEvaluator()
+                    results, *_ = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['reaction'])
+                    precision, recall, f1 = \
+                        results['overall']['precision'], results['overall']['recall'], results['overall']['f1']
+                    scores = [f1]
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    results['mol_only'], *_ = evaluator.evaluate_summarize(
+                        self.eval_dataset.data, predictions['reaction'], mol_only=True, merge_condition=True)
+                elif format == 'coref':
+                    coco_evaluator = CocoEvaluator(self.eval_dataset.coco)
+                    stats = coco_evaluator.evaluate(predictions['coref'])
+                    epoch = self.trainer.current_epoch
+                    evaluator = CorefEvaluator()
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, predictions['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    scores = [f1]
+                    '''
+                    self.print("now evaluating csr_prediction no proc")
+                    with open('./output/csr_predictions_no_proc_bbox.json') as f:
+                        pred1 = json.load(f)
+                    stats = coco_evaluator.evaluate(pred1['coref'])
+                    results = evaluator.evaluate_summarize(self.eval_dataset.data, pred1['coref'])
+                    precision, recall, f1 = results
+                    self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
+                    '''
+                else:
+                    raise NotImplementedError
+                with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
+                    json.dump(results, f)
+                self.print(json.dumps(results, indent=4))
+            with open(os.path.join(self.trainer.default_root_dir, f'prediction_{name}.json'), 'w') as f:
+                json.dump(predictions, f)
+
+        dist.broadcast_object_list(scores)
+        self.log('test/score', scores[0], prog_bar=True, rank_zero_only=True)
+        self.test_step_outputs.clear()
+
+    def predict_step(self, batch, batch_idx):
+        return self.validation_step(batch, batch_idx)
+
+    def configure_optimizers(self):
+        num_training_steps = self.trainer.num_training_steps
+        self.print(f'Num training steps: {num_training_steps}')
+        num_warmup_steps = int(num_training_steps * self.args.warmup_ratio)
+        # parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.args.lr, weight_decay=self.args.weight_decay)
+        scheduler = get_scheduler(self.args.scheduler, optimizer, num_warmup_steps, num_training_steps)
+        return {'optimizer': optimizer, 'lr_scheduler': {'scheduler': scheduler, 'interval': 'step'}}
+
+    
 
 
 class ReactionDataModule(LightningDataModule):
@@ -328,8 +593,10 @@ class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
 
 
 def main():
-
+    #torch.set_float32_matmul_precision('medium')
     args = get_args()
+
+
     pl.seed_everything(args.seed, workers=True)
 
     if args.debug:
@@ -337,13 +604,16 @@ def main():
 
     tokenizer = get_tokenizer(args)
 
+    
+
     MODEL = ReactionExtractorPix2Seq if args.pix2seq else ReactionExtractor
     if args.do_train:
         model = MODEL(args, tokenizer)
     else:
         model = MODEL.load_from_checkpoint(os.path.join(args.save_path, 'checkpoints/best.ckpt'), strict=False,
-                                           args=args, tokenizer=tokenizer)
-
+                                        args=args, tokenizer=tokenizer)
+    #print(model)
+    #compiled_model = torch.compile(model, backend = "eager")
     dm = ReactionDataModule(args, tokenizer)
     dm.prepare_data()
     dm.print_stats()
@@ -356,6 +626,7 @@ def main():
     trainer = pl.Trainer(
         strategy=DDPStrategy(find_unused_parameters=False),
         accelerator='gpu',
+        precision = 16,
         devices=4,
         logger=logger,
         default_root_dir=args.save_path,
@@ -365,7 +636,7 @@ def main():
         accumulate_grad_batches=args.gradient_accumulation_steps,
         check_val_every_n_epoch=args.eval_per_epoch,
         log_every_n_steps=10,
-        deterministic=True)
+        deterministic='warn')
 
     if args.do_train:
         trainer.num_training_steps = math.ceil(
@@ -377,11 +648,32 @@ def main():
 
     if args.do_valid:
         model.eval_dataset = dm.val_dataset
+
+        print("here")
+
+        #a=time.time()
+        #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack = True, record_shapes=True) as prof:
+        #    with record_function("model_inference"):
         trainer.validate(model, datamodule=dm)
+        #print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+        #prof.export_stacks("/tmp/profiler_stacks.txt", "self_cpu_time_total")
+        #print("exportd stacks")
+        #b=time.time()
+
+        #print(a-b)
 
     if args.do_test:
         model.eval_dataset = dm.test_dataset
         trainer.test(model, datamodule=dm)
+        '''
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack = True, record_shapes=True) as prof:
+            with record_function("model_inference"):
+                trainer.test(model, datamodule=dm)
+        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+        
+        prof.export_stacks("/tmp/profiler_stacks_cpu_A6000_16.txt", "self_cpu_time_total")
+        '''
+        
 
 
 if __name__ == "__main__":

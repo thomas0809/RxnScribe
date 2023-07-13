@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from torch import nn, Tensor
 from .attention_layer import Attention
 
+from transformers import EncoderDecoderConfig, EncoderDecoderModel, AutoConfig, BertConfig
+
 
 class Transformer(nn.Module):
 
@@ -112,6 +114,7 @@ class Transformer(nn.Module):
 
                 score, pred_token = log_probs.max(dim=-1)
                 pred_seq.append(pred_token)
+
                 pred_scores.append(score)
 
                 if self.pred_eos:
@@ -346,19 +349,40 @@ def _get_clones(module, N):
 
 
 def build_transformer(args, tokenizer):
-    num_vocal = len(tokenizer)
-    return Transformer(
-        d_model=args.hidden_dim,
-        dropout=args.dropout,
-        nhead=args.nheads,
-        dim_feedforward=args.dim_feedforward,
-        num_encoder_layers=args.enc_layers,
-        num_decoder_layers=args.dec_layers,
-        normalize_before=args.pre_norm,
-        num_vocal=num_vocal,
-        pred_eos=args.pred_eos,
-        tokenizer=tokenizer
-    )
+    if args.use_hf_transformer:
+        num_vocal = len(tokenizer)
+        print("num vocal "+str(num_vocal))
+        encoder_config = BertConfig(max_position_embeddings = 1764, hidden_size = 256, num_attention_heads = 4, vocab_size = num_vocal, num_hidden_layers = 4, intermediate_size = 1024)
+        decoder_config = BertConfig(max_position_embeddings = 1764, hidden_size = 256, num_attention_heads = 4, vocab_size = num_vocal, is_decoder = True, num_hidden_layers = 4, intermediate_size = 1024)
+        config = EncoderDecoderConfig.from_encoder_decoder_configs(encoder_config, decoder_config, add_pooling_layer = False, decoder_add_pooling_layer = False)
+
+        model = EncoderDecoderModel(config=config)
+        model.config.vocab_size = num_vocal
+        model.config.decoder_start_token_id = tokenizer.SOS_ID
+        model.config.pad_token_id = tokenizer.PAD_ID
+        model.config.eos_token_id = tokenizer.EOS_ID
+        model.encoder.embeddings.word_embeddings = None
+        model.encoder.pooler = None
+        return model
+    elif args.linear_head:
+        return nn.Sequential(
+            nn.Linear(42*42*256, 2094),
+            nn.Softmax()
+        )
+    else:
+        num_vocal = len(tokenizer)
+        return Transformer(
+            d_model=args.hidden_dim,
+            dropout=args.dropout,
+            nhead=args.nheads,
+            dim_feedforward=args.dim_feedforward,
+            num_encoder_layers=args.enc_layers,
+            num_decoder_layers=args.dec_layers,
+            normalize_before=args.pre_norm,
+            num_vocal=num_vocal,
+            pred_eos=args.pred_eos,
+            tokenizer=tokenizer
+        )
 
 
 def _get_activation_fn(activation):

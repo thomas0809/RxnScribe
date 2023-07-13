@@ -54,7 +54,7 @@ class ReactionDataset(Dataset):
         # coordinates are normalized after transform
         image, target = self.transform(image, target)
         ref['scale'] = target['scale']
-        if self.is_train:
+        if self.is_train or True:
             args = self.args
             if self.format == 'reaction':
                 max_len = self.tokenizer['reaction'].max_len
@@ -74,6 +74,7 @@ class ReactionDataset(Dataset):
                 label, label_out = self.tokenizer['coref'].data_to_sequence(
                     target, rand_order = False, add_noise = False, split_heuristic = args.split_heuristic
                 )
+                
                 ref['coref'] = torch.LongTensor(label[:max_len])
                 ref['coref_out'] = torch.LongTensor(label_out[:max_len])
         return image, ref
@@ -103,11 +104,17 @@ class ReactionDataset(Dataset):
 
     def load_and_prepare(self, idx):
         target = self.data[idx]
-        path = os.path.join(self.image_path, target['file_name'])
+        if self.args.is_coco:
+            if self.is_train:
+                path = os.path.join(self.image_path, 'train2017', target['file_name'])
+            else:
+                path = os.path.join(self.image_path, 'val2017', target['file_name'])
+        else:
+            path = os.path.join(self.image_path, target['file_name'])
         if not os.path.exists(path):
             print(path, "doesn't exists.", flush=True)
         image = Image.open(path).convert("RGB")
-        if self.is_train:
+        if self.is_train or True:
             image, target = self.prepare(image, target)
         return image, target
 
@@ -128,7 +135,6 @@ class ReactionDataset(Dataset):
 
         classes = [obj["category_id"] for obj in anno]
         classes = torch.tensor(classes, dtype=torch.int64)
-
         target = copy.deepcopy(target)
         target["boxes"] = boxes
         target["labels"] = classes
