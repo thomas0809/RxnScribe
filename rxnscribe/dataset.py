@@ -184,15 +184,16 @@ class ReactionDataset(Dataset):
         target2["boxes"][:, 1::2] += y2
         for key in ["boxes", "labels", "area"]:
             target[key] = torch.cat([target1[key], target2[key]], dim=0)
-        if "reactions" in target1:
+        if "reactions" in target1 and self.format == 'reactions':
             target["reactions"] = [r for r in target1["reactions"]]
             nbox = len(target1["boxes"])
             for r in target2["reactions"]:
                 newr = {}
                 for key, seq in r.items():
                     newr[key] = [x + nbox for x in seq]
+                    
                 target["reactions"].append(newr)
-        if "corefs" in target1:
+        if "corefs" in target1 and self.format == 'coref':
             target["corefs"] = [pair for pair in target1["corefs"]]
             nBoxes1 = len(target1["boxes"])
             for pair in target2["corefs"]:

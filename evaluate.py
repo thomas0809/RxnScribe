@@ -24,8 +24,8 @@ if __name__ == "__main__":
     gold_images = []
     pred_images = []
     for split in range(args.num_splits):
-        data_path = os.path.join(args.data_path, f'test{split}.json')
-        pred_path = os.path.join(args.pred_path, f'{split}/prediction_test{split}.json')
+        data_path = os.path.join(args.data_path, f'dev{split}.json')
+        pred_path = os.path.join(args.pred_path, f'{split}/prediction_dev{split}.json')
         with open(data_path) as f:
             data = json.load(f)
         with open(pred_path) as f:

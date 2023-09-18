@@ -154,11 +154,16 @@ class CorefEvaluator(object):
     
     def evaluate(self, groundtruths, predictions):
         hits, gold_total, pred_total = 0, 0, 0
+        counter = 0 
+        print(len(predictions))
         for gold_image, pred_image in zip(groundtruths, predictions):
-            hit, gold_pairs, pred_pairs = self.evaluate_image(gold_image, pred_image)
+            
+            try: hit, gold_pairs, pred_pairs = self.evaluate_image(gold_image, pred_image)
+            except: print(counter)
             hits += hit
             gold_total += gold_pairs
             pred_total += pred_pairs
+            counter += 1
         return hits, gold_total, pred_total
     
     def evaluate_summarize(self, groundtruths, predictions):

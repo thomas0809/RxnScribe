@@ -48,14 +48,17 @@ class BBox(object):
     COLOR = {1: 'r', 2: 'g', 3: 'b', 4: 'y'}
     CATEGORY = {1: 'Mol', 2: 'Txt', 3: 'Idt', 4: 'Sup'}
 
-    def draw(self, ax, color=None):
+    def draw(self, ax, color='r', text = None):
         x1, y1, x2, y2 = self.unnormalize()
         if color is None:
             color = self.COLOR[self.category_id]
         rect = patches.Rectangle(
             (x1, y1), x2-x1, y2-y1, linewidth=1, edgecolor=color, facecolor=colors.to_rgba(color, 0.2))
         text = f'{self.CATEGORY[self.category_id]}'
-        ax.text(x1, y1, text, fontsize=10, bbox=dict(linewidth=0, facecolor='yellow', alpha=0.5))
+        if text == 'Mol':
+            ax.text(x1 , y1-15, text, fontsize=10, bbox=dict(linewidth=0, facecolor='yellow', alpha=0.5))
+        else:
+            ax.text(x1-45 , y1+10, text, fontsize=10, bbox=dict(linewidth=0, facecolor='yellow', alpha=0.5))
         ax.add_patch(rect)
         return
 
@@ -236,13 +239,13 @@ class ImageData(object):
         if image is not None:
             ax.imshow(image)
         for i, b in enumerate(self.gold_bboxes):
-            b.draw(ax)
+            b.draw(ax, color = None)
 
     def draw_prediction(self, ax, image=None):
         if image is not None:
             ax.imshow(image)
         for i, b in enumerate(self.pred_bboxes):
-            b.draw(ax)
+            b.draw(ax, color = None)
 
 
 class ReactionImageData(ImageData):
@@ -351,17 +354,21 @@ class CorefImageData(ImageData):
         if image is not None:
             ax.imshow(image)
         counter = 0
+        colours = ['#648fff', '#785ef0','#dc267f', '#fe6100','#ffb000','r', 'b', 'g', 'k', 'c', 'm', 'y', 'r', 'b', 'g', 'k', 'c', 'm', 'y', 'r', 'b', 'g', 'k', 'c', 'm', 'y']
+        colorcounter = -1
         for i, b in enumerate(self.pred_bboxes):
-            if (b.category_id == 1 or b.category_id == 2) and i < len(self.pred_bboxes) - 1 and self.pred_bboxes[i+1].category_id == 3:
+            if (b.category_id == 1 or b.category_id == 2): # and i < len(self.pred_bboxes) - 1 and self.pred_bboxes[i+1].category_id == 3:
                 counter += 1
+                colorcounter += 1
                 xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
                 #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
-                ax.text(xmin - 50, ymin+ 60, str(counter), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5))
+                #ax.text(xmin - 50, ymin+ 60, i, fontsize=20, bbox=dict(facecolor=colours[colorcounter], alpha=0.5))
+                b.draw(ax, color = 'deepskyblue') 
             elif b.category_id == 3:
                 xmin, ymin, xmax, ymax = b.unnormalize() #* np.array([w, h, w, h])
                 #ax.add_patch(patches.Rectangle((xmin + 20, ymin + 20), xmax - xmin, ymax - ymin, fill=False, color='r', linewidth=1))
-                ax.text(xmin - 50, ymin+ 60, str(counter), fontsize=20, bbox=dict(facecolor='purple', alpha=0.5)) 
-            b.draw(ax) 
+                #ax.text(xmin - 50, ymin+ 60, i, fontsize=20, bbox=dict(facecolor=colours[colorcounter], alpha=0.5)) 
+                b.draw(ax, color = 'limegreen') 
 
 
 

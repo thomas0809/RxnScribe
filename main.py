@@ -330,10 +330,10 @@ class ReactionExtractorPix2Seq(LightningModule):
 
     def training_step(self, batch, batch_idx):
 
-        print("training step")
+
         indices, images, refs = batch
+
         format = self.format
-        #print("refs "+str(refs))
         if self.args.use_hf_transformer:
             logits, loss = self.model(images, refs[format])
             #print(loss)
@@ -505,15 +505,14 @@ class ReactionExtractorPix2Seq(LightningModule):
                     precision, recall, f1 = results
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
                     scores = [f1]
-                    '''
+         
                     self.print("now evaluating csr_prediction no proc")
-                    with open('./output/csr_predictions_no_proc_bbox.json') as f:
+                    with open('./output/csr_all_340.json') as f:
                         pred1 = json.load(f)
                     stats = coco_evaluator.evaluate(pred1['coref'])
                     results = evaluator.evaluate_summarize(self.eval_dataset.data, pred1['coref'])
                     precision, recall, f1 = results
                     self.print(f'Epoch: {epoch:>3}  Precision: {precision:.4f}  Recall: {recall:.4f}  F1: {f1:.4f}')
-                    '''
                 else:
                     raise NotImplementedError
                 with open(os.path.join(self.trainer.default_root_dir, f'eval_{name}.json'), 'w') as f:
@@ -573,7 +572,7 @@ class ReactionDataModule(LightningDataModule):
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
             self.train_dataset, batch_size=self.args.batch_size, num_workers=self.args.num_workers,
-            collate_fn=self.collate_fn)
+            collate_fn=self.collate_fn, prefetch_factor=2, persistent_workers=True, pin_memory=True)
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
@@ -610,7 +609,7 @@ def main():
     if args.do_train:
         model = MODEL(args, tokenizer)
     else:
-        model = MODEL.load_from_checkpoint(os.path.join(args.save_path, 'checkpoints/best.ckpt'), strict=False,
+        model = MODEL.load_from_checkpoint(os.path.join(args.save_path, 'checkpoints/last.ckpt'), strict=False,
                                         args=args, tokenizer=tokenizer)
     #print(model)
     #compiled_model = torch.compile(model, backend = "eager")
@@ -627,7 +626,7 @@ def main():
         strategy=DDPStrategy(find_unused_parameters=False),
         accelerator='gpu',
         precision = 16,
-        devices=4,
+        devices=args.gpus,
         logger=logger,
         default_root_dir=args.save_path,
         callbacks=[checkpoint, lr_monitor],

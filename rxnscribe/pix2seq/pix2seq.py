@@ -205,7 +205,13 @@ def build_pix2seq_model(args, tokenizer):
 
     if args.pix2seq_ckpt is not None:
         checkpoint = torch.load(args.pix2seq_ckpt, map_location='cpu')
-        #print(checkpoint.keys())
-        model.load_state_dict(checkpoint['model'])
+        if args.use_hf_transformer:
+            new_dict = {}
+            #print(checkpoint['state_dict'].keys())
+            for key in checkpoint['state_dict']:
+                new_dict[key[6:]] = checkpoint['state_dict'][key]
+            model.load_state_dict(new_dict, strict = False)
+        else:
+            model.load_state_dict(checkpoint['model'])
 
     return model
